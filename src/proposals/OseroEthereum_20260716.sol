@@ -11,40 +11,40 @@ import {BaseSpell} from "../BaseSpell.sol";
 /// Sources:
 /// - https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
 /// - https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/AaveFacet.sol
-interface IController {
+interface IControllerLike {
     function usds_setVault(address vault) external;
     function aave_setMaxSlippage(address aToken, uint256 maxSlippage) external;
 }
 
 /// @dev Sky Allocator vault administration surface.
 /// Source: https://github.com/sky-ecosystem/dss-allocator/blob/226584d3b179d98025497815adb4ea585ea0102d/src/AllocatorVault.sol
-interface IAllocatorVault {
+interface IAllocatorVaultLike {
     function rely(address usr) external;
 }
 
 /// @dev Sky Allocator buffer approval surface.
 /// Source: https://github.com/sky-ecosystem/dss-allocator/blob/226584d3b179d98025497815adb4ea585ea0102d/src/AllocatorBuffer.sol
-interface IAllocatorBuffer {
+interface IAllocatorBufferLike {
     function approve(address asset, address spender, uint256 amount) external;
 }
 
 /// @dev PAU rate-limit administration surface.
 /// Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/RateLimits.sol
-interface IRateLimits {
+interface IRateLimitsLike {
     function setRateLimitData(bytes32 key, uint256 maxAmount, uint256 slope) external;
     function setUnlimitedRateLimitData(bytes32 key) external;
 }
 
 /// @dev USDSFacet rate-limit key surface.
 /// Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/IUSDSFacet.sol
-interface IUSDSFacet {
+interface IUSDSFacetLike {
     function mintRateLimitKey() external pure returns (bytes32);
     function burnRateLimitKey() external pure returns (bytes32);
 }
 
 /// @dev AaveFacet rate-limit key surface.
 /// Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/IAaveFacet.sol
-interface IAaveFacet {
+interface IAaveFacetLike {
     function getDepositRateLimitKey(address aToken, address pool, address underlyingAsset)
         external
         pure
@@ -79,21 +79,21 @@ contract OseroEthereum_20260716 is BaseSpell {
         // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set USDS vault).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        IController(OseroEthereum.OSERO_CONTROLLER).usds_setVault(OseroEthereum.OSERO_ALLOCATOR_VAULT);
+        IControllerLike(OseroEthereum.OSERO_CONTROLLER).usds_setVault(OseroEthereum.OSERO_ALLOCATOR_VAULT);
 
         // Authorize the PAU ALMProxy on the Osero Sky Allocation Vault.
         // Before: AllocatorVault.wards(ALMProxy) == 0. After: wards(ALMProxy) == 1.
         // Source: https://github.com/sky-ecosystem/dss-allocator/blob/226584d3b179d98025497815adb4ea585ea0102d/src/AllocatorVault.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (authorize ALMProxy on AllocatorVault).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        IAllocatorVault(OseroEthereum.OSERO_ALLOCATOR_VAULT).rely(OseroEthereum.OSERO_ALM_PROXY);
+        IAllocatorVaultLike(OseroEthereum.OSERO_ALLOCATOR_VAULT).rely(OseroEthereum.OSERO_ALM_PROXY);
 
         // Allow the ALMProxy to pull drawn USDS from the Osero Sky Allocation Buffer after USDSFacet.mint().
         // Before: USDS.allowance(buffer, ALMProxy) == 0. After: allowance == type(uint256).max.
         // Source: https://github.com/sky-ecosystem/dss-allocator/blob/226584d3b179d98025497815adb4ea585ea0102d/src/AllocatorBuffer.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (approve ALMProxy on AllocatorBuffer).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        IAllocatorBuffer(OseroEthereum.OSERO_ALLOCATOR_BUFFER)
+        IAllocatorBufferLike(OseroEthereum.OSERO_ALLOCATOR_BUFFER)
             .approve(USDS, OseroEthereum.OSERO_ALM_PROXY, type(uint256).max);
 
         _setupRateLimits();
@@ -103,7 +103,8 @@ contract OseroEthereum_20260716 is BaseSpell {
         // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/AaveFacet.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend spUSDS max slippage).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        IController(OseroEthereum.OSERO_CONTROLLER).aave_setMaxSlippage(SparkLend.USDS_SPTOKEN, SPARK_USDS_MAX_SLIPPAGE);
+        IControllerLike(OseroEthereum.OSERO_CONTROLLER)
+            .aave_setMaxSlippage(SparkLend.USDS_SPTOKEN, SPARK_USDS_MAX_SLIPPAGE);
     }
 
     function _setupRateLimits() private {
@@ -137,28 +138,28 @@ contract OseroEthereum_20260716 is BaseSpell {
     }
 
     function _setUsdsMintRateLimit(uint256 maxAmount, uint256 slope) private {
-        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
-            .setRateLimitData(IUSDSFacet(SkyPau.USDS_FACET).mintRateLimitKey(), maxAmount, slope);
+        IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS)
+            .setRateLimitData(IUSDSFacetLike(SkyPau.USDS_FACET).mintRateLimitKey(), maxAmount, slope);
     }
 
     function _setUnlimitedUsdsBurnRateLimit() private {
-        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
-            .setUnlimitedRateLimitData(IUSDSFacet(SkyPau.USDS_FACET).burnRateLimitKey());
+        IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS)
+            .setUnlimitedRateLimitData(IUSDSFacetLike(SkyPau.USDS_FACET).burnRateLimitKey());
     }
 
     function _setSparkUsdsDepositRateLimit(uint256 maxAmount, uint256 slope) private {
-        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+        IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS)
             .setRateLimitData(
-                IAaveFacet(SkyPau.AAVE_FACET).getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
+                IAaveFacetLike(SkyPau.AAVE_FACET).getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
                 maxAmount,
                 slope
             );
     }
 
     function _setUnlimitedSparkUsdsWithdrawRateLimit() private {
-        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+        IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS)
             .setUnlimitedRateLimitData(
-                IAaveFacet(SkyPau.AAVE_FACET).getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL)
+                IAaveFacetLike(SkyPau.AAVE_FACET).getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL)
             );
     }
 }
