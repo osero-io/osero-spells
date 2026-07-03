@@ -66,12 +66,12 @@ contract OseroEthereum_20260716 is BaseSpell {
     uint256 public constant USDS_MINT_SLOPE = uint256(5_000_000e18) / 1 days;
 
     /// @dev AaveFacet slippage floor uses 1e18 precision. After: require at least 99.99% of supplied USDS as spUSDS.
-    uint256 public constant SPARK_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
+    uint256 public constant SPARKLEND_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
 
     /// @dev After: 5,000,000 USDS SparkLend deposit cap.
-    uint256 public constant SPARK_USDS_DEPOSIT_MAX = 5_000_000e18;
+    uint256 public constant SPARKLEND_USDS_DEPOSIT_MAX = 5_000_000e18;
     /// @dev After: 5,000,000 USDS per day SparkLend deposit refill rate.
-    uint256 public constant SPARK_USDS_DEPOSIT_SLOPE = uint256(5_000_000e18) / 1 days;
+    uint256 public constant SPARKLEND_USDS_DEPOSIT_SLOPE = uint256(5_000_000e18) / 1 days;
 
     function execute() external override {
         // Set USDSFacet.vault to the Osero Sky Allocation Vault.
@@ -104,7 +104,7 @@ contract OseroEthereum_20260716 is BaseSpell {
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend spUSDS max slippage).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
         IControllerLike(OseroEthereum.OSERO_CONTROLLER)
-            .aave_setMaxSlippage(SparkLend.USDS_SPTOKEN, SPARK_USDS_MAX_SLIPPAGE);
+            .aave_setMaxSlippage(SparkLend.USDS_SPTOKEN, SPARKLEND_USDS_MAX_SLIPPAGE);
     }
 
     function _setupRateLimits() private {
@@ -127,7 +127,7 @@ contract OseroEthereum_20260716 is BaseSpell {
         // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/AaveFacet.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend USDS deposit rate limit).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        _setSparkUsdsDepositRateLimit(SPARK_USDS_DEPOSIT_MAX, SPARK_USDS_DEPOSIT_SLOPE);
+        _setSparkUsdsDepositRateLimit(SPARKLEND_USDS_DEPOSIT_MAX, SPARKLEND_USDS_DEPOSIT_SLOPE);
 
         // Set SparkLend USDS withdraw rate limit to unlimited.
         // Before: maxAmount = 0, slope = 0. After: maxAmount = type(uint256).max, slope = 0.

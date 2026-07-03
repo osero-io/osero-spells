@@ -135,20 +135,20 @@ contract OseroEthereum_20260716_Test is Test {
         0xcb0537d5e5dba65a8edbac12555995860e5b8e1b70996011edb1ca8173e56d3c;
     bytes32 internal constant EXPECTED_USDS_BURN_RATE_LIMIT_KEY =
         0x844d35ae585cfdeed0a77b7724286a1d4b5718bf8663d85e55396062b1cbe38c;
-    bytes32 internal constant EXPECTED_SPARK_USDS_DEPOSIT_RATE_LIMIT_KEY =
+    bytes32 internal constant EXPECTED_SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY =
         0x5534da2f28b3dd200cb0042c0876cd6e2beca93d3232c366ec077018c82da73d;
-    bytes32 internal constant EXPECTED_SPARK_USDS_WITHDRAW_RATE_LIMIT_KEY =
+    bytes32 internal constant EXPECTED_SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY =
         0xf9ac1455c7ba8e0bacb7a3eca4a2cf412eda3cbc0f6aa1b071d73b37d49925d8;
 
     uint256 internal constant EXPECTED_BOUNDED_USDS_AMOUNT = 5_000_000_000_000_000_000_000_000;
     uint256 internal constant EXPECTED_BOUNDED_USDS_SLOPE = 57_870_370_370_370_370_370;
-    uint256 internal constant EXPECTED_SPARK_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
+    uint256 internal constant EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
 
     uint256 internal constant USDS_MINT_MAX_LIMIT = EXPECTED_BOUNDED_USDS_AMOUNT;
     uint256 internal constant USDS_MINT_SLOPE = EXPECTED_BOUNDED_USDS_SLOPE;
-    uint256 internal constant SPARK_USDS_MAX_SLIPPAGE = EXPECTED_SPARK_USDS_MAX_SLIPPAGE;
-    uint256 internal constant SPARK_USDS_DEPOSIT_MAX = EXPECTED_BOUNDED_USDS_AMOUNT;
-    uint256 internal constant SPARK_USDS_DEPOSIT_SLOPE = EXPECTED_BOUNDED_USDS_SLOPE;
+    uint256 internal constant SPARKLEND_USDS_MAX_SLIPPAGE = EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_MAX = EXPECTED_BOUNDED_USDS_AMOUNT;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_SLOPE = EXPECTED_BOUNDED_USDS_SLOPE;
 
     uint256 internal constant OPERATIONAL_TEST_AMOUNT = 100_000e18;
     uint256 internal constant MAX_EXECUTION_GAS = 30_000_000;
@@ -322,20 +322,20 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(controller.usds_burnRateLimitKey(), EXPECTED_USDS_BURN_RATE_LIMIT_KEY, "burn-key-mismatch");
         assertEq(
             controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
-            EXPECTED_SPARK_USDS_DEPOSIT_RATE_LIMIT_KEY,
+            EXPECTED_SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
             "spark-deposit-key-mismatch"
         );
         assertEq(
             controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL),
-            EXPECTED_SPARK_USDS_WITHDRAW_RATE_LIMIT_KEY,
+            EXPECTED_SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
             "spark-withdraw-key-mismatch"
         );
 
         assertEq(payload.USDS_MINT_MAX_LIMIT(), EXPECTED_BOUNDED_USDS_AMOUNT, "payload-mint-max-amount");
         assertEq(payload.USDS_MINT_SLOPE(), EXPECTED_BOUNDED_USDS_SLOPE, "payload-mint-slope");
-        assertEq(payload.SPARK_USDS_DEPOSIT_MAX(), EXPECTED_BOUNDED_USDS_AMOUNT, "payload-deposit-max-amount");
-        assertEq(payload.SPARK_USDS_DEPOSIT_SLOPE(), EXPECTED_BOUNDED_USDS_SLOPE, "payload-deposit-slope");
-        assertEq(payload.SPARK_USDS_MAX_SLIPPAGE(), EXPECTED_SPARK_USDS_MAX_SLIPPAGE, "payload-spark-slippage");
+        assertEq(payload.SPARKLEND_USDS_DEPOSIT_MAX(), EXPECTED_BOUNDED_USDS_AMOUNT, "payload-deposit-max-amount");
+        assertEq(payload.SPARKLEND_USDS_DEPOSIT_SLOPE(), EXPECTED_BOUNDED_USDS_SLOPE, "payload-deposit-slope");
+        assertEq(payload.SPARKLEND_USDS_MAX_SLIPPAGE(), EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE, "payload-spark-slippage");
 
         assertEq(EXPECTED_BOUNDED_USDS_AMOUNT, uint256(5_000_000e18), "scope-amount-decimal-encoding");
         assertEq(EXPECTED_BOUNDED_USDS_SLOPE, uint256(5_000_000e18) / 1 days, "scope-slope-decimal-encoding");
@@ -437,7 +437,7 @@ contract OseroEthereum_20260716_Test is Test {
 
         uint256 proxyUsdsStart = usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
         uint256 proxySpUsdsStart = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
-        assertEq(rateLimits.getCurrentRateLimit(depositKey), SPARK_USDS_DEPOSIT_MAX, "deposit-limit-not-full");
+        assertEq(rateLimits.getCurrentRateLimit(depositKey), SPARKLEND_USDS_DEPOSIT_MAX, "deposit-limit-not-full");
         assertEq(
             rateLimits.getCurrentRateLimit(withdrawKey),
             type(uint256).max,
@@ -455,7 +455,7 @@ contract OseroEthereum_20260716_Test is Test {
             abi.encodeCall(IOseroPauControllerLike.aave_deposit, (SparkLend.USDS_SPTOKEN, OPERATIONAL_TEST_AMOUNT))
         );
 
-        uint256 minSpUsdsOut = OPERATIONAL_TEST_AMOUNT * SPARK_USDS_MAX_SLIPPAGE / 1e18;
+        uint256 minSpUsdsOut = OPERATIONAL_TEST_AMOUNT * SPARKLEND_USDS_MAX_SLIPPAGE / 1e18;
         uint256 proxySpUsdsAfterDeposit = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
         assertEq(usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-deposited");
         assertGe(proxySpUsdsAfterDeposit - proxySpUsdsStart, minSpUsdsOut, "proxy-spusds-received-too-low");
@@ -464,7 +464,7 @@ contract OseroEthereum_20260716_Test is Test {
         );
         assertEq(
             rateLimits.getCurrentRateLimit(depositKey),
-            SPARK_USDS_DEPOSIT_MAX - OPERATIONAL_TEST_AMOUNT,
+            SPARKLEND_USDS_DEPOSIT_MAX - OPERATIONAL_TEST_AMOUNT,
             "deposit-limit-not-decreased"
         );
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max, "withdraw-limit-not-unlimited");
@@ -486,7 +486,7 @@ contract OseroEthereum_20260716_Test is Test {
             proxySpUsdsStart + (OPERATIONAL_TEST_AMOUNT - minSpUsdsOut),
             "proxy-spusds-residual-too-high"
         );
-        assertEq(rateLimits.getCurrentRateLimit(depositKey), SPARK_USDS_DEPOSIT_MAX, "deposit-limit-not-refilled");
+        assertEq(rateLimits.getCurrentRateLimit(depositKey), SPARKLEND_USDS_DEPOSIT_MAX, "deposit-limit-not-refilled");
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max, "withdraw-limit-changed");
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_burn, (OPERATIONAL_TEST_AMOUNT)));
@@ -572,12 +572,12 @@ contract OseroEthereum_20260716_Test is Test {
             "almproxy-buffer-allowance-not-max"
         );
         assertEq(
-            controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN), SPARK_USDS_MAX_SLIPPAGE, "spark-slippage-not-set"
+            controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN), SPARKLEND_USDS_MAX_SLIPPAGE, "spark-slippage-not-set"
         );
 
         _assertRateLimit(mintKey, USDS_MINT_MAX_LIMIT, USDS_MINT_SLOPE, "mint");
         _assertUnlimitedRateLimit(burnKey, "burn");
-        _assertRateLimit(depositKey, SPARK_USDS_DEPOSIT_MAX, SPARK_USDS_DEPOSIT_SLOPE, "spark-deposit");
+        _assertRateLimit(depositKey, SPARKLEND_USDS_DEPOSIT_MAX, SPARKLEND_USDS_DEPOSIT_SLOPE, "spark-deposit");
         _assertUnlimitedRateLimit(withdrawKey, "spark-withdraw");
     }
 
