@@ -5,10 +5,13 @@
       "rev": "620536fa5277db4e3fd46772d5cbc1ea0696fb43"
     }
   },
-  "lib/osero-address-registry": {
-    "rev": "bf7f92d3b1fc650022e023aa790b51b6612cc9f1"
+  "lib/sky-pau-registry": {
+    "rev": "7b4493a7800b355ef5c9cc43e569c5e8d6fd97f8"
   },
   "lib/spark-address-registry": {
     "rev": "ef21cffbd11ba30c4859213fa37f82b58387b6a6"
+  },
+  "lib/osero-address-registry": {
+    "rev": "62d5fe15537d70a3a64aa5bbd853cacf6471aecb"
   }
 }
