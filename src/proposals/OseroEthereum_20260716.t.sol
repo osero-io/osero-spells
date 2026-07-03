@@ -572,7 +572,9 @@ contract OseroEthereum_20260716_Test is Test {
             "almproxy-buffer-allowance-not-max"
         );
         assertEq(
-            controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN), SPARKLEND_USDS_MAX_SLIPPAGE, "spark-slippage-not-set"
+            controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN),
+            SPARKLEND_USDS_MAX_SLIPPAGE,
+            "spark-slippage-not-set"
         );
 
         _assertRateLimit(mintKey, USDS_MINT_MAX_LIMIT, USDS_MINT_SLOPE, "mint");
