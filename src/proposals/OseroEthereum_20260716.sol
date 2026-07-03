@@ -96,22 +96,7 @@ contract OseroEthereum_20260716 is BaseSpell {
         IAllocatorBuffer(OseroEthereum.OSERO_ALLOCATOR_BUFFER)
             .approve(USDS, OseroEthereum.OSERO_ALM_PROXY, type(uint256).max);
 
-        IRateLimits rateLimits = IRateLimits(OseroEthereum.OSERO_RATE_LIMITS);
-        IUSDSFacet usdsFacet = IUSDSFacet(SkyPau.USDS_FACET);
-        IAaveFacet aaveFacet = IAaveFacet(SkyPau.AAVE_FACET);
-
-        // Set USDS mint rate limit.
-        // Before: maxAmount = 0, slope = 0. After: maxAmount = 5,000,000e18, slope = 5,000,000e18 / 1 days.
-        // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
-        // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set USDS mint rate limit).
-        // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        rateLimits.setRateLimitData(usdsFacet.mintRateLimitKey(), USDS_MINT_MAX_LIMIT, USDS_MINT_SLOPE);
-        // Set USDS burn rate limit to unlimited.
-        // Before: maxAmount = 0, slope = 0. After: maxAmount = type(uint256).max, slope = 0.
-        // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
-        // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set USDS burn rate limit).
-        // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        rateLimits.setUnlimitedRateLimitData(usdsFacet.burnRateLimitKey());
+        _setupRateLimits();
 
         // Set SparkLend spUSDS max slippage.
         // Before: maxSlippage = 0. After: require received spUSDS >= supplied USDS * 0.9999e18 / 1e18.
@@ -119,22 +104,61 @@ contract OseroEthereum_20260716 is BaseSpell {
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend spUSDS max slippage).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
         IController(OseroEthereum.OSERO_CONTROLLER).aave_setMaxSlippage(SparkLend.USDS_SPTOKEN, SPARK_USDS_MAX_SLIPPAGE);
+    }
+
+    function _setupRateLimits() private {
+        // Set USDS mint rate limit.
+        // Before: maxAmount = 0, slope = 0. After: maxAmount = 5,000,000e18, slope = 5,000,000e18 / 1 days.
+        // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
+        // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set USDS mint rate limit).
+        // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
+        _setUsdsMintRateLimit(USDS_MINT_MAX_LIMIT, USDS_MINT_SLOPE);
+
+        // Set USDS burn rate limit to unlimited.
+        // Before: maxAmount = 0, slope = 0. After: maxAmount = type(uint256).max, slope = 0.
+        // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/usds/USDSFacet.sol
+        // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set USDS burn rate limit).
+        // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
+        _setUnlimitedUsdsBurnRateLimit();
 
         // Set SparkLend USDS deposit rate limit.
         // Before: maxAmount = 0, slope = 0. After: maxAmount = 5,000,000e18, slope = 5,000,000e18 / 1 days.
         // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/AaveFacet.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend USDS deposit rate limit).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        rateLimits.setRateLimitData(
-            aaveFacet.getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
-            SPARK_USDS_DEPOSIT_MAX,
-            SPARK_USDS_DEPOSIT_SLOPE
-        );
+        _setSparkUsdsDepositRateLimit(SPARK_USDS_DEPOSIT_MAX, SPARK_USDS_DEPOSIT_SLOPE);
+
         // Set SparkLend USDS withdraw rate limit to unlimited.
         // Before: maxAmount = 0, slope = 0. After: maxAmount = type(uint256).max, slope = 0.
         // Source: https://github.com/sky-ecosystem/diamond-pau/blob/5c5ad6ae174bf467081ca82342ced2bd42a5c732/src/facets/aave/AaveFacet.sol
         // Forum: https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023 (set SparkLend USDS withdraw rate limit).
         // TODO(executive-sheet): Copy the final Executive Sheet instruction text for this action once published.
-        rateLimits.setUnlimitedRateLimitData(aaveFacet.getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL));
+        _setUnlimitedSparkUsdsWithdrawRateLimit();
+    }
+
+    function _setUsdsMintRateLimit(uint256 maxAmount, uint256 slope) private {
+        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+            .setRateLimitData(IUSDSFacet(SkyPau.USDS_FACET).mintRateLimitKey(), maxAmount, slope);
+    }
+
+    function _setUnlimitedUsdsBurnRateLimit() private {
+        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+            .setUnlimitedRateLimitData(IUSDSFacet(SkyPau.USDS_FACET).burnRateLimitKey());
+    }
+
+    function _setSparkUsdsDepositRateLimit(uint256 maxAmount, uint256 slope) private {
+        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+            .setRateLimitData(
+                IAaveFacet(SkyPau.AAVE_FACET).getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
+                maxAmount,
+                slope
+            );
+    }
+
+    function _setUnlimitedSparkUsdsWithdrawRateLimit() private {
+        IRateLimits(OseroEthereum.OSERO_RATE_LIMITS)
+            .setUnlimitedRateLimitData(
+                IAaveFacet(SkyPau.AAVE_FACET).getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL)
+            );
     }
 }
