@@ -338,10 +338,7 @@ contract OseroEthereum_20260716_Test is Test {
     }
 
     function test_ETHEREUM_spellExecutionConfiguresAllActions() public {
-        bytes32 mintKey = controller.usds_mintRateLimitKey();
-        bytes32 burnKey = controller.usds_burnRateLimitKey();
-        bytes32 depositKey = controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS);
-        bytes32 withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
+        (bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey) = _scopeKeys();
 
         _assertSpellPreconditions(mintKey, burnKey, depositKey, withdrawKey);
 
@@ -353,10 +350,7 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_directPayloadExecutionCannotBypassStarGuardSubProxy() public {
         OseroEthereum_20260716 payload = new OseroEthereum_20260716();
 
-        bytes32 mintKey = controller.usds_mintRateLimitKey();
-        bytes32 burnKey = controller.usds_burnRateLimitKey();
-        bytes32 depositKey = controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS);
-        bytes32 withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
+        (bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey) = _scopeKeys();
 
         _assertSpellPreconditions(mintKey, burnKey, depositKey, withdrawKey);
         SpellState memory stateBefore = _captureSpellState(mintKey, burnKey, depositKey, withdrawKey);
@@ -395,8 +389,7 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent() public {
         _executeSpellViaStarGuard(new OseroEthereum_20260716());
 
-        bytes32 mintKey = controller.usds_mintRateLimitKey();
-        bytes32 burnKey = controller.usds_burnRateLimitKey();
+        (bytes32 mintKey, bytes32 burnKey,,) = _scopeKeys();
         uint256 proxyUsdsStart = usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
 
         assertEq(rateLimits.getCurrentRateLimit(mintKey), USDS_MINT_MAX_LIMIT, "mint-limit-not-full");
@@ -426,10 +419,7 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent() public {
         _executeSpellViaStarGuard(new OseroEthereum_20260716());
 
-        bytes32 mintKey = controller.usds_mintRateLimitKey();
-        bytes32 burnKey = controller.usds_burnRateLimitKey();
-        bytes32 depositKey = controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS);
-        bytes32 withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
+        (bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey) = _scopeKeys();
 
         uint256 proxyUsdsStart = usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
         uint256 proxySpUsdsStart = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
@@ -500,6 +490,17 @@ contract OseroEthereum_20260716_Test is Test {
         uint256 gasUsed = gasStart - gasleft();
 
         assertLe(gasUsed, MAX_EXECUTION_GAS, "starguard-execution-gas-too-high");
+    }
+
+    function _scopeKeys()
+        internal
+        view
+        returns (bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey)
+    {
+        mintKey = controller.usds_mintRateLimitKey();
+        burnKey = controller.usds_burnRateLimitKey();
+        depositKey = controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS);
+        withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
     }
 
     function _executeSpellViaStarGuard(OseroEthereum_20260716 payload) internal {
