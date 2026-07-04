@@ -129,26 +129,22 @@ contract OseroEthereum_20260716_Test is Test {
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
     bytes32 internal constant CONTROLLER = keccak256("CONTROLLER");
-    bytes32 internal constant EXPECTED_USDS_FACET_INTEGRATION_ID = "USDS_FACET";
-    bytes32 internal constant EXPECTED_AAVE_FACET_INTEGRATION_ID = "AAVE_FACET";
-    bytes32 internal constant EXPECTED_USDS_MINT_RATE_LIMIT_KEY =
+    bytes32 internal constant USDS_FACET_INTEGRATION_ID = "USDS_FACET";
+    bytes32 internal constant AAVE_FACET_INTEGRATION_ID = "AAVE_FACET";
+    bytes32 internal constant USDS_MINT_RATE_LIMIT_KEY =
         0xcb0537d5e5dba65a8edbac12555995860e5b8e1b70996011edb1ca8173e56d3c;
-    bytes32 internal constant EXPECTED_USDS_BURN_RATE_LIMIT_KEY =
+    bytes32 internal constant USDS_BURN_RATE_LIMIT_KEY =
         0x844d35ae585cfdeed0a77b7724286a1d4b5718bf8663d85e55396062b1cbe38c;
-    bytes32 internal constant EXPECTED_SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY =
+    bytes32 internal constant SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY =
         0x5534da2f28b3dd200cb0042c0876cd6e2beca93d3232c366ec077018c82da73d;
-    bytes32 internal constant EXPECTED_SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY =
+    bytes32 internal constant SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY =
         0xf9ac1455c7ba8e0bacb7a3eca4a2cf412eda3cbc0f6aa1b071d73b37d49925d8;
 
-    uint256 internal constant EXPECTED_BOUNDED_USDS_AMOUNT = 5_000_000_000_000_000_000_000_000;
-    uint256 internal constant EXPECTED_BOUNDED_USDS_SLOPE = 57_870_370_370_370_370_370;
-    uint256 internal constant EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
-
-    uint256 internal constant USDS_MINT_MAX_LIMIT = EXPECTED_BOUNDED_USDS_AMOUNT;
-    uint256 internal constant USDS_MINT_SLOPE = EXPECTED_BOUNDED_USDS_SLOPE;
-    uint256 internal constant SPARKLEND_USDS_MAX_SLIPPAGE = EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE;
-    uint256 internal constant SPARKLEND_USDS_DEPOSIT_MAX = EXPECTED_BOUNDED_USDS_AMOUNT;
-    uint256 internal constant SPARKLEND_USDS_DEPOSIT_SLOPE = EXPECTED_BOUNDED_USDS_SLOPE;
+    uint256 internal constant USDS_MINT_MAX_LIMIT = 5_000_000_000_000_000_000_000_000;
+    uint256 internal constant USDS_MINT_SLOPE = 57_870_370_370_370_370_370;
+    uint256 internal constant SPARKLEND_USDS_MAX_SLIPPAGE = 999_900_000_000_000_000;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_MAX = 5_000_000_000_000_000_000_000_000;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_SLOPE = 57_870_370_370_370_370_370;
 
     uint256 internal constant OPERATIONAL_TEST_AMOUNT = 100_000e18;
     uint256 internal constant MAX_EXECUTION_GAS = 30_000_000;
@@ -318,27 +314,27 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_scopeKeysAndEncodedParametersMatchTechnicalScope() public {
         OseroEthereum_20260716 payload = new OseroEthereum_20260716();
 
-        assertEq(controller.usds_mintRateLimitKey(), EXPECTED_USDS_MINT_RATE_LIMIT_KEY, "mint-key-mismatch");
-        assertEq(controller.usds_burnRateLimitKey(), EXPECTED_USDS_BURN_RATE_LIMIT_KEY, "burn-key-mismatch");
+        assertEq(controller.usds_mintRateLimitKey(), USDS_MINT_RATE_LIMIT_KEY, "mint-key-mismatch");
+        assertEq(controller.usds_burnRateLimitKey(), USDS_BURN_RATE_LIMIT_KEY, "burn-key-mismatch");
         assertEq(
             controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
-            EXPECTED_SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
+            SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
             "spark-deposit-key-mismatch"
         );
         assertEq(
             controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL),
-            EXPECTED_SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
+            SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
             "spark-withdraw-key-mismatch"
         );
 
-        assertEq(payload.USDS_MINT_MAX_LIMIT(), EXPECTED_BOUNDED_USDS_AMOUNT, "payload-mint-max-amount");
-        assertEq(payload.USDS_MINT_SLOPE(), EXPECTED_BOUNDED_USDS_SLOPE, "payload-mint-slope");
-        assertEq(payload.SPARKLEND_USDS_DEPOSIT_MAX(), EXPECTED_BOUNDED_USDS_AMOUNT, "payload-deposit-max-amount");
-        assertEq(payload.SPARKLEND_USDS_DEPOSIT_SLOPE(), EXPECTED_BOUNDED_USDS_SLOPE, "payload-deposit-slope");
-        assertEq(payload.SPARKLEND_USDS_MAX_SLIPPAGE(), EXPECTED_SPARKLEND_USDS_MAX_SLIPPAGE, "payload-spark-slippage");
+        assertEq(payload.USDS_MINT_MAX_LIMIT(), USDS_MINT_MAX_LIMIT, "payload-mint-max-amount");
+        assertEq(payload.USDS_MINT_SLOPE(), USDS_MINT_SLOPE, "payload-mint-slope");
+        assertEq(payload.SPARKLEND_USDS_DEPOSIT_MAX(), SPARKLEND_USDS_DEPOSIT_MAX, "payload-deposit-max-amount");
+        assertEq(payload.SPARKLEND_USDS_DEPOSIT_SLOPE(), SPARKLEND_USDS_DEPOSIT_SLOPE, "payload-deposit-slope");
+        assertEq(payload.SPARKLEND_USDS_MAX_SLIPPAGE(), SPARKLEND_USDS_MAX_SLIPPAGE, "payload-spark-slippage");
 
-        assertEq(EXPECTED_BOUNDED_USDS_AMOUNT, uint256(5_000_000e18), "scope-amount-decimal-encoding");
-        assertEq(EXPECTED_BOUNDED_USDS_SLOPE, uint256(5_000_000e18) / 1 days, "scope-slope-decimal-encoding");
+        assertEq(USDS_MINT_MAX_LIMIT, uint256(5_000_000e18), "scope-amount-decimal-encoding");
+        assertEq(USDS_MINT_SLOPE, uint256(5_000_000e18) / 1 days, "scope-slope-decimal-encoding");
     }
 
     function test_ETHEREUM_spellExecutionConfiguresAllActions() public {
@@ -670,12 +666,12 @@ contract OseroEthereum_20260716_Test is Test {
         for (uint256 i = 0; i < integrations.length; ++i) {
             bytes32 id = integrations[i].id;
 
-            if (id == EXPECTED_USDS_FACET_INTEGRATION_ID) {
+            if (id == USDS_FACET_INTEGRATION_ID) {
                 assertFalse(sawUsds, "duplicate-usds-integration");
                 sawUsds = true;
                 assertEq(integrations[i].config.facet, SkyPau.USDS_FACET, "usds-integration-facet");
                 assertEq(integrations[i].config.wires.length, 8, "usds-integration-wire-count");
-            } else if (id == EXPECTED_AAVE_FACET_INTEGRATION_ID) {
+            } else if (id == AAVE_FACET_INTEGRATION_ID) {
                 assertFalse(sawAave, "duplicate-aave-integration");
                 sawAave = true;
                 assertEq(integrations[i].config.facet, SkyPau.AAVE_FACET, "aave-integration-facet");
