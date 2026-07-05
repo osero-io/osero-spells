@@ -10,8 +10,5 @@
   },
   "lib/spark-address-registry": {
     "rev": "ef21cffbd11ba30c4859213fa37f82b58387b6a6"
-  },
-  "lib/osero-address-registry": {
-    "rev": "62d5fe15537d70a3a64aa5bbd853cacf6471aecb"
   }
 }

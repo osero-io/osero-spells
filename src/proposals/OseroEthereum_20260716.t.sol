@@ -4,10 +4,6 @@ pragma solidity ^0.8.34;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-import {Ethereum as OseroEthereum} from "osero-address-registry/Ethereum.sol";
-import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
-import {SparkLend} from "spark-address-registry/SparkLend.sol";
-
 import {OseroEthereum_20260716} from "./OseroEthereum_20260716.sol";
 
 struct PauDispatch {
@@ -151,6 +147,31 @@ contract OseroEthereum_20260716_Test is Test {
     address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
     address internal constant PERMISSIONLESS_EXECUTOR = address(0xE2E);
 
+    // Osero PAU addresses. Source: https://github.com/osero-io/osero-address-registry
+    address internal constant OSERO_PROXY = 0x24fdcd3bFA5C2553e05B2f9AD0365EBC296278D3;
+    address internal constant OSERO_OPERATOR = 0x29c5A20A49A0D522A3714af97C517a908946b6A8;
+    bytes32 internal constant OSERO_ILK = "ALLOCATOR-PRYSM-A";
+    address internal constant OSERO_ALLOCATOR_VAULT = 0x146181Aa9B362EaEC2eC3aDd7429a06D53B43d1a;
+    address internal constant OSERO_ALLOCATOR_BUFFER = 0xD0BB61b34771146e31055f20f329cDf97429F889;
+    address internal constant OSERO_STAR_GUARD = 0xBfA2D1dA838E55A74c61699e164cDFF8cF0cF0e2;
+    address internal constant OSERO_ACCESS_CONTROLS = 0x791D2a017532CfAD881c446e6bF93BbC3c0778b2;
+    address internal constant OSERO_ALM_PROXY = 0x6d370e359e9cbd0Fd35Bb38fAF705D84238CB884;
+    address internal constant OSERO_RATE_LIMITS = 0xE9a78f34fe497e2186f81B8c014cd93B308BC62a;
+    address internal constant OSERO_CONTROLLER = 0x24169Afb34fAe4D4356BC54Bd80319131e35ca38;
+    address internal constant OSERO_ADMINISTERED_AGENT = 0x1837505D104F7a6D8b7e19452610B0A3D652EF12;
+    address internal constant SOTER_OPERATOR = 0x3dE688267Cf099307aBdd85F64D8efe03D0b2b26;
+    address internal constant SOTER_FREEZER = 0xF61F90907551a8A23f0f8EEE9658Fa53326de603;
+
+    // Sky PAU addresses. Source: https://github.com/sky-ecosystem/sky-pau-registry
+    address internal constant SKY_PAU_BEACON = 0x829dC2b7E94B1954F0764E573f2E0d45Afa28199;
+    address internal constant SKY_PAU_DEFAULT_PAU_ASSEMBLER = 0xc812aAD3FaE2D3511C664374B601a9BeBFeCCa2E;
+    address internal constant SKY_PAU_USDS_FACET = 0x1221CC4B85Ab260660aD21C2829e0EB516dffBc7;
+    address internal constant SKY_PAU_AAVE_FACET = 0x8CE890A96a193ff2DD4B2eA3C682326F655f6b62;
+
+    // SparkLend addresses. Source: https://github.com/sparkdotfi/spark-address-registry
+    address internal constant SPARKLEND_POOL = 0xC13e21B648A5Ee794902342038FF3aDAB66BE987;
+    address internal constant SPARKLEND_USDS_SPTOKEN = 0xC02aB1A5eaA8d1B114EF786D9bde108cD4364359;
+
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
     bytes32 internal constant CONTROLLER = keccak256("CONTROLLER");
@@ -181,11 +202,11 @@ contract OseroEthereum_20260716_Test is Test {
     uint256 internal constant ALLOCATOR_GAP = 1_000_000 * RAD;
     uint256 internal constant ALLOCATOR_TTL = 1 days;
 
-    IOseroPauControllerLike internal constant controller = IOseroPauControllerLike(OseroEthereum.OSERO_CONTROLLER);
-    IRateLimitsLike internal constant rateLimits = IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS);
-    IStarGuardLike internal constant starGuard = IStarGuardLike(OseroEthereum.OSERO_STAR_GUARD);
+    IOseroPauControllerLike internal constant controller = IOseroPauControllerLike(OSERO_CONTROLLER);
+    IRateLimitsLike internal constant rateLimits = IRateLimitsLike(OSERO_RATE_LIMITS);
+    IStarGuardLike internal constant starGuard = IStarGuardLike(OSERO_STAR_GUARD);
     IERC20 internal constant usds = IERC20(USDS);
-    IERC20 internal constant spUsds = IERC20(SparkLend.USDS_SPTOKEN);
+    IERC20 internal constant spUsds = IERC20(SPARKLEND_USDS_SPTOKEN);
 
     struct SpellState {
         address usdsVault;
@@ -211,17 +232,16 @@ contract OseroEthereum_20260716_Test is Test {
         vm.startPrank(MCD_PAUSE_PROXY);
 
         // Whitelist the Osero ALMProxy on the LitePSM for USDC swaps.
-        ILitePsmLike(MCD_LITE_PSM_USDC_A).kiss(OseroEthereum.OSERO_ALM_PROXY);
+        ILitePsmLike(MCD_LITE_PSM_USDC_A).kiss(OSERO_ALM_PROXY);
 
         // Set the ALLOCATOR-PRYSM-A DC-IAM target parameters
         // (BEFORE: maxLine 10M rad, gap 10M rad, the initial PAU deployment values).
-        IAutoLineLike(MCD_IAM_AUTO_LINE)
-            .setIlk(OseroEthereum.OSERO_ILK, ALLOCATOR_MAX_LINE, ALLOCATOR_GAP, ALLOCATOR_TTL);
+        IAutoLineLike(MCD_IAM_AUTO_LINE).setIlk(OSERO_ILK, ALLOCATOR_MAX_LINE, ALLOCATOR_GAP, ALLOCATOR_TTL);
 
         vm.stopPrank();
 
         // Permissionless keeper action: rebases vat.ilks(ilk).line to min(debt + gap, maxLine).
-        IAutoLineLike(MCD_IAM_AUTO_LINE).exec(OseroEthereum.OSERO_ILK);
+        IAutoLineLike(MCD_IAM_AUTO_LINE).exec(OSERO_ILK);
     }
 
     function test_ETHEREUM_deploymentAndPauSystemPreconfiguration() public {
@@ -231,119 +251,102 @@ contract OseroEthereum_20260716_Test is Test {
         assertTrue(payload.isExecutable(), "payload-not-executable");
         assertEq(payload.USDS(), USDS, "payload-usds-mismatch");
 
-        _assertContract(OseroEthereum.OSERO_PROXY, "osero-proxy");
-        _assertContract(OseroEthereum.OSERO_STAR_GUARD, "osero-star-guard");
-        _assertContract(OseroEthereum.OSERO_ACCESS_CONTROLS, "osero-access-controls");
-        _assertContract(OseroEthereum.OSERO_ALM_PROXY, "osero-alm-proxy");
-        _assertContract(OseroEthereum.OSERO_RATE_LIMITS, "osero-rate-limits");
-        _assertContract(OseroEthereum.OSERO_CONTROLLER, "osero-controller");
-        _assertContract(OseroEthereum.OSERO_ADMINISTERED_AGENT, "osero-administered-agent");
-        _assertContract(OseroEthereum.OSERO_ALLOCATOR_VAULT, "osero-allocator-vault");
-        _assertContract(OseroEthereum.OSERO_ALLOCATOR_BUFFER, "osero-allocator-buffer");
-        _assertContract(SkyPau.BEACON, "sky-pau-beacon");
-        _assertContract(SkyPau.USDS_FACET, "sky-pau-usds-facet");
-        _assertContract(SkyPau.AAVE_FACET, "sky-pau-aave-facet");
+        _assertContract(OSERO_PROXY, "osero-proxy");
+        _assertContract(OSERO_STAR_GUARD, "osero-star-guard");
+        _assertContract(OSERO_ACCESS_CONTROLS, "osero-access-controls");
+        _assertContract(OSERO_ALM_PROXY, "osero-alm-proxy");
+        _assertContract(OSERO_RATE_LIMITS, "osero-rate-limits");
+        _assertContract(OSERO_CONTROLLER, "osero-controller");
+        _assertContract(OSERO_ADMINISTERED_AGENT, "osero-administered-agent");
+        _assertContract(OSERO_ALLOCATOR_VAULT, "osero-allocator-vault");
+        _assertContract(OSERO_ALLOCATOR_BUFFER, "osero-allocator-buffer");
+        _assertContract(SKY_PAU_BEACON, "sky-pau-beacon");
+        _assertContract(SKY_PAU_USDS_FACET, "sky-pau-usds-facet");
+        _assertContract(SKY_PAU_AAVE_FACET, "sky-pau-aave-facet");
         _assertContract(USDS, "usds");
-        _assertContract(SparkLend.POOL, "spark-pool");
-        _assertContract(SparkLend.USDS_SPTOKEN, "spark-usds-sptoken");
+        _assertContract(SPARKLEND_POOL, "spark-pool");
+        _assertContract(SPARKLEND_USDS_SPTOKEN, "spark-usds-sptoken");
 
-        assertEq(starGuard.subProxy(), OseroEthereum.OSERO_PROXY, "starguard-subproxy-mismatch");
+        assertEq(starGuard.subProxy(), OSERO_PROXY, "starguard-subproxy-mismatch");
         assertEq(starGuard.wards(MCD_PAUSE_PROXY), 1, "pause-proxy-not-starguard-ward");
-        assertEq(
-            ISubProxyLike(OseroEthereum.OSERO_PROXY).wards(OseroEthereum.OSERO_STAR_GUARD),
-            1,
-            "starguard-not-subproxy-ward"
-        );
-        assertEq(ISubProxyLike(OseroEthereum.OSERO_PROXY).wards(MCD_PAUSE_PROXY), 1, "pause-proxy-not-subproxy-ward");
+        assertEq(ISubProxyLike(OSERO_PROXY).wards(OSERO_STAR_GUARD), 1, "starguard-not-subproxy-ward");
+        assertEq(ISubProxyLike(OSERO_PROXY).wards(MCD_PAUSE_PROXY), 1, "pause-proxy-not-subproxy-ward");
         assertGt(starGuard.maxDelay(), 0, "starguard-max-delay-not-set");
 
-        assertEq(
-            controller.accessControls(), OseroEthereum.OSERO_ACCESS_CONTROLS, "controller-access-controls-mismatch"
-        );
-        assertEq(controller.beacon(), SkyPau.BEACON, "controller-beacon-mismatch");
-        assertEq(controller.proxy(), OseroEthereum.OSERO_ALM_PROXY, "controller-proxy-mismatch");
-        assertEq(controller.rateLimits(), OseroEthereum.OSERO_RATE_LIMITS, "controller-rate-limits-mismatch");
+        assertEq(controller.accessControls(), OSERO_ACCESS_CONTROLS, "controller-access-controls-mismatch");
+        assertEq(controller.beacon(), SKY_PAU_BEACON, "controller-beacon-mismatch");
+        assertEq(controller.proxy(), OSERO_ALM_PROXY, "controller-proxy-mismatch");
+        assertEq(controller.rateLimits(), OSERO_RATE_LIMITS, "controller-rate-limits-mismatch");
 
-        _assertDispatch(IOseroPauControllerLike.usds_setVault.selector, SkyPau.USDS_FACET, "usds-set-vault");
-        _assertDispatch(IOseroPauControllerLike.usds_vault.selector, SkyPau.USDS_FACET, "usds-vault");
-        _assertDispatch(IOseroPauControllerLike.usds_mint.selector, SkyPau.USDS_FACET, "usds-mint");
-        _assertDispatch(IOseroPauControllerLike.usds_burn.selector, SkyPau.USDS_FACET, "usds-burn");
-        _assertDispatch(IOseroPauControllerLike.usds_mintRateLimitKey.selector, SkyPau.USDS_FACET, "usds-mint-key");
-        _assertDispatch(IOseroPauControllerLike.usds_burnRateLimitKey.selector, SkyPau.USDS_FACET, "usds-burn-key");
+        _assertDispatch(IOseroPauControllerLike.usds_setVault.selector, SKY_PAU_USDS_FACET, "usds-set-vault");
+        _assertDispatch(IOseroPauControllerLike.usds_vault.selector, SKY_PAU_USDS_FACET, "usds-vault");
+        _assertDispatch(IOseroPauControllerLike.usds_mint.selector, SKY_PAU_USDS_FACET, "usds-mint");
+        _assertDispatch(IOseroPauControllerLike.usds_burn.selector, SKY_PAU_USDS_FACET, "usds-burn");
+        _assertDispatch(IOseroPauControllerLike.usds_mintRateLimitKey.selector, SKY_PAU_USDS_FACET, "usds-mint-key");
+        _assertDispatch(IOseroPauControllerLike.usds_burnRateLimitKey.selector, SKY_PAU_USDS_FACET, "usds-burn-key");
 
-        _assertDispatch(IOseroPauControllerLike.aave_setMaxSlippage.selector, SkyPau.AAVE_FACET, "aave-set-slippage");
-        _assertDispatch(IOseroPauControllerLike.aave_getMaxSlippage.selector, SkyPau.AAVE_FACET, "aave-get-slippage");
+        _assertDispatch(IOseroPauControllerLike.aave_setMaxSlippage.selector, SKY_PAU_AAVE_FACET, "aave-set-slippage");
+        _assertDispatch(IOseroPauControllerLike.aave_getMaxSlippage.selector, SKY_PAU_AAVE_FACET, "aave-get-slippage");
         _assertDispatch(
-            IOseroPauControllerLike.aave_getDepositRateLimitKey.selector, SkyPau.AAVE_FACET, "aave-deposit-key"
+            IOseroPauControllerLike.aave_getDepositRateLimitKey.selector, SKY_PAU_AAVE_FACET, "aave-deposit-key"
         );
         _assertDispatch(
-            IOseroPauControllerLike.aave_getWithdrawRateLimitKey.selector, SkyPau.AAVE_FACET, "aave-withdraw-key"
+            IOseroPauControllerLike.aave_getWithdrawRateLimitKey.selector, SKY_PAU_AAVE_FACET, "aave-withdraw-key"
         );
-        _assertDispatch(IOseroPauControllerLike.aave_deposit.selector, SkyPau.AAVE_FACET, "aave-deposit");
-        _assertDispatch(IOseroPauControllerLike.aave_withdraw.selector, SkyPau.AAVE_FACET, "aave-withdraw");
+        _assertDispatch(IOseroPauControllerLike.aave_deposit.selector, SKY_PAU_AAVE_FACET, "aave-deposit");
+        _assertDispatch(IOseroPauControllerLike.aave_withdraw.selector, SKY_PAU_AAVE_FACET, "aave-withdraw");
 
         _assertOnlyExpectedControllerIntegrations();
 
-        IAccessControlsLike accessControls = IAccessControlsLike(OseroEthereum.OSERO_ACCESS_CONTROLS);
-        IAdministeredAgentLike agent = IAdministeredAgentLike(OseroEthereum.OSERO_ADMINISTERED_AGENT);
+        IAccessControlsLike accessControls = IAccessControlsLike(OSERO_ACCESS_CONTROLS);
+        IAdministeredAgentLike agent = IAdministeredAgentLike(OSERO_ADMINISTERED_AGENT);
 
-        assertTrue(
-            accessControls.hasRole(DEFAULT_ADMIN_ROLE, OseroEthereum.OSERO_PROXY), "subproxy-missing-access-admin"
-        );
-        assertTrue(
-            accessControls.hasRole(ALLOCATOR_ROLE, OseroEthereum.OSERO_ADMINISTERED_AGENT),
-            "agent-missing-allocator-role"
-        );
+        assertTrue(accessControls.hasRole(DEFAULT_ADMIN_ROLE, OSERO_PROXY), "subproxy-missing-access-admin");
+        assertTrue(accessControls.hasRole(ALLOCATOR_ROLE, OSERO_ADMINISTERED_AGENT), "agent-missing-allocator-role");
         assertEq(accessControls.getRoleMemberCount(DEFAULT_ADMIN_ROLE), 1, "access-admin-count");
         assertEq(accessControls.getRoleMemberCount(ALLOCATOR_ROLE), 1, "allocator-role-count");
 
-        IAccessControlLike almProxy = IAccessControlLike(OseroEthereum.OSERO_ALM_PROXY);
-        assertTrue(almProxy.hasRole(DEFAULT_ADMIN_ROLE, OseroEthereum.OSERO_PROXY), "subproxy-missing-almproxy-admin");
+        IAccessControlLike almProxy = IAccessControlLike(OSERO_ALM_PROXY);
+        assertTrue(almProxy.hasRole(DEFAULT_ADMIN_ROLE, OSERO_PROXY), "subproxy-missing-almproxy-admin");
         assertFalse(
-            almProxy.hasRole(DEFAULT_ADMIN_ROLE, SkyPau.DEFAULT_PAU_ASSEMBLER), "assembler-retains-almproxy-admin"
+            almProxy.hasRole(DEFAULT_ADMIN_ROLE, SKY_PAU_DEFAULT_PAU_ASSEMBLER), "assembler-retains-almproxy-admin"
         );
-        assertTrue(almProxy.hasRole(CONTROLLER, OseroEthereum.OSERO_CONTROLLER), "controller-missing-almproxy-role");
-        assertTrue(rateLimits.hasRole(CONTROLLER, OseroEthereum.OSERO_CONTROLLER), "controller-missing-ratelimits-role");
-        assertTrue(
-            rateLimits.hasRole(DEFAULT_ADMIN_ROLE, OseroEthereum.OSERO_PROXY), "subproxy-missing-ratelimits-admin"
-        );
+        assertTrue(almProxy.hasRole(CONTROLLER, OSERO_CONTROLLER), "controller-missing-almproxy-role");
+        assertTrue(rateLimits.hasRole(CONTROLLER, OSERO_CONTROLLER), "controller-missing-ratelimits-role");
+        assertTrue(rateLimits.hasRole(DEFAULT_ADMIN_ROLE, OSERO_PROXY), "subproxy-missing-ratelimits-admin");
         assertFalse(
-            rateLimits.hasRole(DEFAULT_ADMIN_ROLE, SkyPau.DEFAULT_PAU_ASSEMBLER), "assembler-retains-ratelimits-admin"
+            rateLimits.hasRole(DEFAULT_ADMIN_ROLE, SKY_PAU_DEFAULT_PAU_ASSEMBLER), "assembler-retains-ratelimits-admin"
         );
 
         assertEq(agent.adminCount(), 1, "agent-admin-count");
         assertEq(agent.actorCount(), 2, "agent-actor-count");
         assertEq(agent.revokerCount(), 1, "agent-revoker-count");
         assertEq(agent.grantorCount(), 0, "agent-grantor-count");
-        assertEq(agent.getAdmin(0), OseroEthereum.OSERO_PROXY, "agent-admin-0");
-        assertTrue(agent.getIsActor(OseroEthereum.OSERO_OPERATOR), "osero-operator-not-agent-actor");
-        assertTrue(agent.getIsActor(OseroEthereum.SOTER_OPERATOR), "soter-operator-not-agent-actor");
-        assertEq(agent.getRevoker(0), OseroEthereum.SOTER_FREEZER, "agent-revoker-0");
+        assertEq(agent.getAdmin(0), OSERO_PROXY, "agent-admin-0");
+        assertTrue(agent.getIsActor(OSERO_OPERATOR), "osero-operator-not-agent-actor");
+        assertTrue(agent.getIsActor(SOTER_OPERATOR), "soter-operator-not-agent-actor");
+        assertEq(agent.getRevoker(0), SOTER_FREEZER, "agent-revoker-0");
 
-        IAllocatorVaultLike vault = IAllocatorVaultLike(OseroEthereum.OSERO_ALLOCATOR_VAULT);
-        assertEq(vault.buffer(), OseroEthereum.OSERO_ALLOCATOR_BUFFER, "vault-buffer-mismatch");
-        assertEq(vault.ilk(), OseroEthereum.OSERO_ILK, "vault-ilk-mismatch");
-        assertEq(vault.wards(OseroEthereum.OSERO_PROXY), 1, "subproxy-not-vault-ward");
-        assertEq(
-            IAllocatorBufferLike(OseroEthereum.OSERO_ALLOCATOR_BUFFER).wards(OseroEthereum.OSERO_PROXY),
-            1,
-            "subproxy-not-buffer-ward"
-        );
+        IAllocatorVaultLike vault = IAllocatorVaultLike(OSERO_ALLOCATOR_VAULT);
+        assertEq(vault.buffer(), OSERO_ALLOCATOR_BUFFER, "vault-buffer-mismatch");
+        assertEq(vault.ilk(), OSERO_ILK, "vault-ilk-mismatch");
+        assertEq(vault.wards(OSERO_PROXY), 1, "subproxy-not-vault-ward");
+        assertEq(IAllocatorBufferLike(OSERO_ALLOCATOR_BUFFER).wards(OSERO_PROXY), 1, "subproxy-not-buffer-ward");
 
-        assertEq(IATokenLike(SparkLend.USDS_SPTOKEN).POOL(), SparkLend.POOL, "sptoken-pool-mismatch");
-        assertEq(IATokenLike(SparkLend.USDS_SPTOKEN).UNDERLYING_ASSET_ADDRESS(), USDS, "sptoken-underlying-mismatch");
+        assertEq(IATokenLike(SPARKLEND_USDS_SPTOKEN).POOL(), SPARKLEND_POOL, "sptoken-pool-mismatch");
+        assertEq(IATokenLike(SPARKLEND_USDS_SPTOKEN).UNDERLYING_ASSET_ADDRESS(), USDS, "sptoken-underlying-mismatch");
     }
 
     function test_ETHEREUM_coordinatedCoreSpellSimulationMatchesTargetParameters() public view {
-        assertEq(ILitePsmLike(MCD_LITE_PSM_USDC_A).bud(OseroEthereum.OSERO_ALM_PROXY), 1, "almproxy-not-litepsm-bud");
+        assertEq(ILitePsmLike(MCD_LITE_PSM_USDC_A).bud(OSERO_ALM_PROXY), 1, "almproxy-not-litepsm-bud");
 
-        (uint256 maxLine, uint256 gap, uint48 ttl,,) = IAutoLineLike(MCD_IAM_AUTO_LINE).ilks(OseroEthereum.OSERO_ILK);
+        (uint256 maxLine, uint256 gap, uint48 ttl,,) = IAutoLineLike(MCD_IAM_AUTO_LINE).ilks(OSERO_ILK);
         assertEq(maxLine, ALLOCATOR_MAX_LINE, "autoline-max-line-mismatch");
         assertEq(gap, ALLOCATOR_GAP, "autoline-gap-mismatch");
         assertEq(ttl, ALLOCATOR_TTL, "autoline-ttl-mismatch");
 
         // With zero ilk debt at the fork block, AutoLine.exec() leaves the vat debt ceiling at the gap.
-        (,,, uint256 vatLine,) = IVatLike(MCD_VAT).ilks(OseroEthereum.OSERO_ILK);
+        (,,, uint256 vatLine,) = IVatLike(MCD_VAT).ilks(OSERO_ILK);
         assertEq(vatLine, ALLOCATOR_GAP, "vat-line-not-rebased-to-gap");
     }
 
@@ -353,12 +356,12 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(controller.usds_mintRateLimitKey(), USDS_MINT_RATE_LIMIT_KEY, "mint-key-mismatch");
         assertEq(controller.usds_burnRateLimitKey(), USDS_BURN_RATE_LIMIT_KEY, "burn-key-mismatch");
         assertEq(
-            controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS),
+            controller.aave_getDepositRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL, USDS),
             SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
             "spark-deposit-key-mismatch"
         );
         assertEq(
-            controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL),
+            controller.aave_getWithdrawRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL),
             SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
             "spark-withdraw-key-mismatch"
         );
@@ -426,18 +429,14 @@ contract OseroEthereum_20260716_Test is Test {
         _executeSpellViaStarGuard(new OseroEthereum_20260716());
 
         (bytes32 mintKey, bytes32 burnKey,,) = _scopeKeys();
-        uint256 proxyUsdsStart = usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
+        uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
 
         assertEq(rateLimits.getCurrentRateLimit(mintKey), USDS_MINT_MAX_LIMIT, "mint-limit-not-full");
         assertEq(rateLimits.getCurrentRateLimit(burnKey), type(uint256).max, "burn-limit-not-unlimited");
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_mint, (OPERATIONAL_TEST_AMOUNT)));
 
-        assertEq(
-            usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY),
-            proxyUsdsStart + OPERATIONAL_TEST_AMOUNT,
-            "proxy-usds-not-minted"
-        );
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + OPERATIONAL_TEST_AMOUNT, "proxy-usds-not-minted");
         assertEq(
             rateLimits.getCurrentRateLimit(mintKey),
             USDS_MINT_MAX_LIMIT - OPERATIONAL_TEST_AMOUNT,
@@ -447,7 +446,7 @@ contract OseroEthereum_20260716_Test is Test {
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_burn, (OPERATIONAL_TEST_AMOUNT)));
 
-        assertEq(usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-burned");
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-burned");
         assertEq(rateLimits.getCurrentRateLimit(mintKey), USDS_MINT_MAX_LIMIT, "mint-limit-not-refilled");
         assertEq(rateLimits.getCurrentRateLimit(burnKey), type(uint256).max, "burn-limit-not-still-unlimited");
     }
@@ -466,8 +465,8 @@ contract OseroEthereum_20260716_Test is Test {
 
         (bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey) = _scopeKeys();
 
-        uint256 proxyUsdsStart = usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
-        uint256 proxySpUsdsStart = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
+        uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
+        uint256 proxySpUsdsStart = spUsds.balanceOf(OSERO_ALM_PROXY);
         assertEq(rateLimits.getCurrentRateLimit(depositKey), SPARKLEND_USDS_DEPOSIT_MAX, "deposit-limit-not-full");
         assertEq(
             rateLimits.getCurrentRateLimit(withdrawKey),
@@ -476,23 +475,17 @@ contract OseroEthereum_20260716_Test is Test {
         );
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_mint, (OPERATIONAL_TEST_AMOUNT)));
-        assertEq(
-            usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY),
-            proxyUsdsStart + OPERATIONAL_TEST_AMOUNT,
-            "proxy-usds-not-minted"
-        );
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + OPERATIONAL_TEST_AMOUNT, "proxy-usds-not-minted");
 
         _callAsOseroActor(
-            abi.encodeCall(IOseroPauControllerLike.aave_deposit, (SparkLend.USDS_SPTOKEN, OPERATIONAL_TEST_AMOUNT))
+            abi.encodeCall(IOseroPauControllerLike.aave_deposit, (SPARKLEND_USDS_SPTOKEN, OPERATIONAL_TEST_AMOUNT))
         );
 
         uint256 minSpUsdsOut = OPERATIONAL_TEST_AMOUNT * SPARKLEND_USDS_MAX_SLIPPAGE / 1e18;
-        uint256 proxySpUsdsAfterDeposit = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
-        assertEq(usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-deposited");
+        uint256 proxySpUsdsAfterDeposit = spUsds.balanceOf(OSERO_ALM_PROXY);
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-deposited");
         assertGe(proxySpUsdsAfterDeposit - proxySpUsdsStart, minSpUsdsOut, "proxy-spusds-received-too-low");
-        assertEq(
-            usds.allowance(OseroEthereum.OSERO_ALM_PROXY, SparkLend.POOL), 0, "spark-pool-usds-approval-not-cleared"
-        );
+        assertEq(usds.allowance(OSERO_ALM_PROXY, SPARKLEND_POOL), 0, "spark-pool-usds-approval-not-cleared");
         assertEq(
             rateLimits.getCurrentRateLimit(depositKey),
             SPARKLEND_USDS_DEPOSIT_MAX - OPERATIONAL_TEST_AMOUNT,
@@ -501,16 +494,12 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max, "withdraw-limit-not-unlimited");
 
         bytes memory withdrawResult = _callAsOseroActor(
-            abi.encodeCall(IOseroPauControllerLike.aave_withdraw, (SparkLend.USDS_SPTOKEN, OPERATIONAL_TEST_AMOUNT))
+            abi.encodeCall(IOseroPauControllerLike.aave_withdraw, (SPARKLEND_USDS_SPTOKEN, OPERATIONAL_TEST_AMOUNT))
         );
         assertEq(abi.decode(withdrawResult, (uint256)), OPERATIONAL_TEST_AMOUNT, "aave-withdraw-return-mismatch");
 
-        assertEq(
-            usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY),
-            proxyUsdsStart + OPERATIONAL_TEST_AMOUNT,
-            "proxy-usds-not-withdrawn"
-        );
-        uint256 proxySpUsdsAfterWithdraw = spUsds.balanceOf(OseroEthereum.OSERO_ALM_PROXY);
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + OPERATIONAL_TEST_AMOUNT, "proxy-usds-not-withdrawn");
+        uint256 proxySpUsdsAfterWithdraw = spUsds.balanceOf(OSERO_ALM_PROXY);
         assertLt(proxySpUsdsAfterWithdraw, proxySpUsdsAfterDeposit, "proxy-spusds-not-decreased");
         assertLe(
             proxySpUsdsAfterWithdraw,
@@ -522,7 +511,7 @@ contract OseroEthereum_20260716_Test is Test {
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_burn, (OPERATIONAL_TEST_AMOUNT)));
 
-        assertEq(usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-restored");
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-restored");
         assertEq(rateLimits.getCurrentRateLimit(mintKey), USDS_MINT_MAX_LIMIT, "mint-limit-not-refilled-after-burn");
         assertEq(rateLimits.getCurrentRateLimit(burnKey), type(uint256).max, "burn-limit-changed");
     }
@@ -530,15 +519,13 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_sparkUsdsDepositRateLimitRejectsOversizedDeposit() public {
         _executeSpellViaStarGuard(new OseroEthereum_20260716());
 
-        deal(USDS, OseroEthereum.OSERO_ALM_PROXY, SPARKLEND_USDS_DEPOSIT_MAX + 1);
-        assertEq(
-            usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), SPARKLEND_USDS_DEPOSIT_MAX + 1, "proxy-usds-deal-failed"
-        );
+        deal(USDS, OSERO_ALM_PROXY, SPARKLEND_USDS_DEPOSIT_MAX + 1);
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), SPARKLEND_USDS_DEPOSIT_MAX + 1, "proxy-usds-deal-failed");
 
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/rate-limit-exceeded"),
             abi.encodeCall(
-                IOseroPauControllerLike.aave_deposit, (SparkLend.USDS_SPTOKEN, SPARKLEND_USDS_DEPOSIT_MAX + 1)
+                IOseroPauControllerLike.aave_deposit, (SPARKLEND_USDS_SPTOKEN, SPARKLEND_USDS_DEPOSIT_MAX + 1)
             )
         );
     }
@@ -558,8 +545,8 @@ contract OseroEthereum_20260716_Test is Test {
     {
         mintKey = controller.usds_mintRateLimitKey();
         burnKey = controller.usds_burnRateLimitKey();
-        depositKey = controller.aave_getDepositRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL, USDS);
-        withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
+        depositKey = controller.aave_getDepositRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL, USDS);
+        withdrawKey = controller.aave_getWithdrawRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL);
     }
 
     function _executeSpellViaStarGuard(OseroEthereum_20260716 payload) internal returns (uint256) {
@@ -587,11 +574,7 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(returnedPayload, address(payload), "starguard-returned-payload-mismatch");
         (plottedPayload,,) = starGuard.spellData();
         assertEq(plottedPayload, address(0), "starguard-spell-data-not-cleared");
-        assertEq(
-            ISubProxyLike(OseroEthereum.OSERO_PROXY).wards(OseroEthereum.OSERO_STAR_GUARD),
-            1,
-            "starguard-removed-from-subproxy"
-        );
+        assertEq(ISubProxyLike(OSERO_PROXY).wards(OSERO_STAR_GUARD), 1, "starguard-removed-from-subproxy");
 
         return gasUsed;
     }
@@ -601,17 +584,9 @@ contract OseroEthereum_20260716_Test is Test {
         view
     {
         assertEq(controller.usds_vault(), address(0), "controller-vault-already-set");
-        assertEq(
-            IAllocatorVaultLike(OseroEthereum.OSERO_ALLOCATOR_VAULT).wards(OseroEthereum.OSERO_ALM_PROXY),
-            0,
-            "almproxy-already-vault-ward"
-        );
-        assertEq(
-            usds.allowance(OseroEthereum.OSERO_ALLOCATOR_BUFFER, OseroEthereum.OSERO_ALM_PROXY),
-            0,
-            "almproxy-already-buffer-spender"
-        );
-        assertEq(controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN), 0, "spark-slippage-already-set");
+        assertEq(IAllocatorVaultLike(OSERO_ALLOCATOR_VAULT).wards(OSERO_ALM_PROXY), 0, "almproxy-already-vault-ward");
+        assertEq(usds.allowance(OSERO_ALLOCATOR_BUFFER, OSERO_ALM_PROXY), 0, "almproxy-already-buffer-spender");
+        assertEq(controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN), 0, "spark-slippage-already-set");
 
         _assertZeroRateLimit(mintKey, "mint");
         _assertZeroRateLimit(burnKey, "burn");
@@ -623,19 +598,15 @@ contract OseroEthereum_20260716_Test is Test {
         internal
         view
     {
-        assertEq(controller.usds_vault(), OseroEthereum.OSERO_ALLOCATOR_VAULT, "controller-vault-not-set");
+        assertEq(controller.usds_vault(), OSERO_ALLOCATOR_VAULT, "controller-vault-not-set");
+        assertEq(IAllocatorVaultLike(OSERO_ALLOCATOR_VAULT).wards(OSERO_ALM_PROXY), 1, "almproxy-not-vault-ward");
         assertEq(
-            IAllocatorVaultLike(OseroEthereum.OSERO_ALLOCATOR_VAULT).wards(OseroEthereum.OSERO_ALM_PROXY),
-            1,
-            "almproxy-not-vault-ward"
-        );
-        assertEq(
-            usds.allowance(OseroEthereum.OSERO_ALLOCATOR_BUFFER, OseroEthereum.OSERO_ALM_PROXY),
+            usds.allowance(OSERO_ALLOCATOR_BUFFER, OSERO_ALM_PROXY),
             type(uint256).max,
             "almproxy-buffer-allowance-not-max"
         );
         assertEq(
-            controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN),
+            controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN),
             SPARKLEND_USDS_MAX_SLIPPAGE,
             "spark-slippage-not-set"
         );
@@ -652,11 +623,9 @@ contract OseroEthereum_20260716_Test is Test {
         returns (SpellState memory state)
     {
         state.usdsVault = controller.usds_vault();
-        state.almProxyVaultWard =
-            IAllocatorVaultLike(OseroEthereum.OSERO_ALLOCATOR_VAULT).wards(OseroEthereum.OSERO_ALM_PROXY);
-        state.almProxyBufferAllowance =
-            usds.allowance(OseroEthereum.OSERO_ALLOCATOR_BUFFER, OseroEthereum.OSERO_ALM_PROXY);
-        state.sparkUsdsMaxSlippage = controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN);
+        state.almProxyVaultWard = IAllocatorVaultLike(OSERO_ALLOCATOR_VAULT).wards(OSERO_ALM_PROXY);
+        state.almProxyBufferAllowance = usds.allowance(OSERO_ALLOCATOR_BUFFER, OSERO_ALM_PROXY);
+        state.sparkUsdsMaxSlippage = controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN);
         state.mintData = rateLimits.getRateLimitData(mintKey);
         state.burnData = rateLimits.getRateLimitData(burnKey);
         state.depositData = rateLimits.getRateLimitData(depositKey);
@@ -706,23 +675,23 @@ contract OseroEthereum_20260716_Test is Test {
     }
 
     function _expectCallAsOseroActorRevert(bytes memory revertData, bytes memory data) internal {
-        IAdministeredAgentLike agent = IAdministeredAgentLike(OseroEthereum.OSERO_ADMINISTERED_AGENT);
-        assertTrue(agent.getIsActor(OseroEthereum.OSERO_OPERATOR), "osero-operator-not-agent-actor");
+        IAdministeredAgentLike agent = IAdministeredAgentLike(OSERO_ADMINISTERED_AGENT);
+        assertTrue(agent.getIsActor(OSERO_OPERATOR), "osero-operator-not-agent-actor");
 
-        vm.prank(OseroEthereum.OSERO_OPERATOR);
+        vm.prank(OSERO_OPERATOR);
         vm.expectRevert(revertData);
         // Lint false positive: this is the agent's `call(address,bytes)` interface function, not
         // `address.call`, so there is no success flag to check — it reverts on failure instead.
         // forge-lint: disable-next-line(unchecked-call)
-        agent.call(OseroEthereum.OSERO_CONTROLLER, data);
+        agent.call(OSERO_CONTROLLER, data);
     }
 
     function _callAsOseroActor(bytes memory data) internal returns (bytes memory result) {
-        IAdministeredAgentLike agent = IAdministeredAgentLike(OseroEthereum.OSERO_ADMINISTERED_AGENT);
-        assertTrue(agent.getIsActor(OseroEthereum.OSERO_OPERATOR), "osero-operator-not-agent-actor");
+        IAdministeredAgentLike agent = IAdministeredAgentLike(OSERO_ADMINISTERED_AGENT);
+        assertTrue(agent.getIsActor(OSERO_OPERATOR), "osero-operator-not-agent-actor");
 
-        vm.prank(OseroEthereum.OSERO_OPERATOR);
-        result = agent.call(OseroEthereum.OSERO_CONTROLLER, data);
+        vm.prank(OSERO_OPERATOR);
+        result = agent.call(OSERO_CONTROLLER, data);
     }
 
     function _assertContract(address target, string memory label) internal view {
@@ -748,12 +717,12 @@ contract OseroEthereum_20260716_Test is Test {
             if (id == USDS_FACET_INTEGRATION_ID) {
                 assertFalse(sawUsds, "duplicate-usds-integration");
                 sawUsds = true;
-                assertEq(integrations[i].config.facet, SkyPau.USDS_FACET, "usds-integration-facet");
+                assertEq(integrations[i].config.facet, SKY_PAU_USDS_FACET, "usds-integration-facet");
                 assertEq(integrations[i].config.wires.length, 8, "usds-integration-wire-count");
             } else if (id == AAVE_FACET_INTEGRATION_ID) {
                 assertFalse(sawAave, "duplicate-aave-integration");
                 sawAave = true;
-                assertEq(integrations[i].config.facet, SkyPau.AAVE_FACET, "aave-integration-facet");
+                assertEq(integrations[i].config.facet, SKY_PAU_AAVE_FACET, "aave-integration-facet");
                 assertEq(integrations[i].config.wires.length, 7, "aave-integration-wire-count");
             } else {
                 assertTrue(false, "unexpected-controller-integration");
