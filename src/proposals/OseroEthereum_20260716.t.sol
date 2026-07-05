@@ -198,64 +198,29 @@ contract OseroEthereum_20260716_Test is Test {
         IRateLimitsLike.RateLimitData withdrawData;
     }
 
-    // Checklist action coverage:
-    // - Controller.usds_setVault(OSERO_ALLOCATOR_VAULT):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
-    // - AllocatorVault.rely(OSERO_ALM_PROXY):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
-    // - AllocatorBuffer.approve(USDS, OSERO_ALM_PROXY, type(uint256).max):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
-    // - RateLimits.setRateLimitData(USDS mint key, 5M, 5M/day):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent,
-    //   test_ETHEREUM_usdsMintRateLimitRejectsOversizedMint.
-    // - RateLimits.setUnlimitedRateLimitData(USDS burn key):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
-    // - Controller.aave_setMaxSlippage(spUSDS, 0.9999e18):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
-    // - RateLimits.setRateLimitData(Spark USDS deposit key, 5M, 5M/day):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent,
-    //   test_ETHEREUM_sparkUsdsDepositRateLimitRejectsOversizedDeposit.
-    // - RateLimits.setUnlimitedRateLimitData(Spark USDS withdraw key):
-    //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
-
-    // The coordinated July 16 Sky Core spell is not yet on-chain at `MAINNET_FORK_BLOCK`, so setUp() simulates
-    // its two Osero-relevant actions (LitePSM whitelisting of the ALMProxy and the ALLOCATOR-PRYSM-A DC-IAM
-    // parameters) by pranking the MCD Pause Proxy. See _simulateCoordinatedSkyCoreSpell().
-    // test_ETHEREUM_coordinatedCoreSpellSimulationMatchesTargetParameters asserts the resulting state.
-
     function setUp() public {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), MAINNET_FORK_BLOCK);
 
         _simulateCoordinatedSkyCoreSpell();
     }
 
-    /// @dev Simulates the coordinated July 16 Sky Core spell actions that gate the Osero launch. The MCD Pause
-    /// Proxy is ward on both the LitePSM and the AutoLine, so pranking it reproduces the Core spell's effect.
+    // The coordinated July 16 Sky Core spell is not yet on-chain at `MAINNET_FORK_BLOCK`, so replay its two
+    // Osero-relevant actions (LitePSM whitelisting of the ALMProxy and the ALLOCATOR-PRYSM-A DC-IAM parameters)
+    // by pranking the MCD Pause Proxy, which is ward on both targets.
     function _simulateCoordinatedSkyCoreSpell() internal {
         vm.startPrank(MCD_PAUSE_PROXY);
 
         // Whitelist the Osero ALMProxy on the LitePSM for USDC swaps.
-        // Before: LitePSM.bud(OSERO_ALM_PROXY) == 0. After: bud == 1.
         ILitePsmLike(MCD_LITE_PSM_USDC_A).kiss(OseroEthereum.OSERO_ALM_PROXY);
 
-        // Set the ALLOCATOR-PRYSM-A DC-IAM target parameters.
-        // Before: maxLine = 10,000,000 rad, gap = 10,000,000 rad, ttl = 1 days (initial PAU deployment values).
-        // After: maxLine = 5,000,000 rad, gap = 1,000,000 rad, ttl = 1 days.
+        // Set the ALLOCATOR-PRYSM-A DC-IAM target parameters
+        // (BEFORE: maxLine 10M rad, gap 10M rad, the initial PAU deployment values).
         IAutoLineLike(MCD_IAM_AUTO_LINE)
             .setIlk(OseroEthereum.OSERO_ILK, ALLOCATOR_MAX_LINE, ALLOCATOR_GAP, ALLOCATOR_TTL);
 
         vm.stopPrank();
 
         // Permissionless keeper action: rebases vat.ilks(ilk).line to min(debt + gap, maxLine).
-        // Before: vat line = 10,000,000 rad. After: vat line = 1,000,000 rad (ilk debt is zero at the fork block).
         IAutoLineLike(MCD_IAM_AUTO_LINE).exec(OseroEthereum.OSERO_ILK);
     }
 
@@ -746,6 +711,9 @@ contract OseroEthereum_20260716_Test is Test {
 
         vm.prank(OseroEthereum.OSERO_OPERATOR);
         vm.expectRevert(revertData);
+        // Lint false positive: this is the agent's `call(address,bytes)` interface function, not
+        // `address.call`, so there is no success flag to check — it reverts on failure instead.
+        // forge-lint: disable-next-line(unchecked-call)
         agent.call(OseroEthereum.OSERO_CONTROLLER, data);
     }
 
