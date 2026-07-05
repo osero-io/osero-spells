@@ -369,7 +369,7 @@ contract OseroEthereum_20260716_Test is Test {
 
     function test_ETHEREUM_starGuardExecutionWindowRejectsExpiredPayload() public {
         OseroEthereum_20260716 payload = new OseroEthereum_20260716();
-        bytes32 codehash = keccak256(address(payload).code);
+        bytes32 codehash = address(payload).codehash;
 
         vm.prank(MCD_PAUSE_PROXY);
         starGuard.plot(address(payload), codehash);
@@ -506,7 +506,7 @@ contract OseroEthereum_20260716_Test is Test {
     function _executeSpellViaStarGuard(OseroEthereum_20260716 payload) internal {
         assertTrue(payload.isExecutable(), "payload-not-executable-before-plot");
 
-        bytes32 codehash = keccak256(address(payload).code);
+        bytes32 codehash = address(payload).codehash;
 
         vm.prank(MCD_PAUSE_PROXY);
         starGuard.plot(address(payload), codehash);
