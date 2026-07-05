@@ -512,9 +512,7 @@ contract OseroEthereum_20260716_Test is Test {
     function test_ETHEREUM_starGuardExecutionGasWithinBlockLimit() public {
         OseroEthereum_20260716 payload = new OseroEthereum_20260716();
 
-        uint256 gasStart = gasleft();
-        _executeSpellViaStarGuard(payload);
-        uint256 gasUsed = gasStart - gasleft();
+        uint256 gasUsed = _executeSpellViaStarGuard(payload);
 
         assertLe(gasUsed, MAX_EXECUTION_GAS, "starguard-execution-gas-too-high");
     }
@@ -530,7 +528,7 @@ contract OseroEthereum_20260716_Test is Test {
         withdrawKey = controller.aave_getWithdrawRateLimitKey(SparkLend.USDS_SPTOKEN, SparkLend.POOL);
     }
 
-    function _executeSpellViaStarGuard(OseroEthereum_20260716 payload) internal {
+    function _executeSpellViaStarGuard(OseroEthereum_20260716 payload) internal returns (uint256) {
         assertTrue(payload.isExecutable(), "payload-not-executable-before-plot");
 
         bytes32 codehash = address(payload).codehash;
@@ -544,8 +542,13 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(deadline, block.timestamp + starGuard.maxDelay(), "starguard-deadline-mismatch");
         assertTrue(starGuard.prob(), "starguard-prob-false");
 
-        vm.prank(PERMISSIONLESS_EXECUTOR);
+        vm.startPrank(PERMISSIONLESS_EXECUTOR);
+
+        uint256 gasStart = gasleft();
         address returnedPayload = starGuard.exec();
+        uint256 gasUsed = gasStart - gasleft();
+
+        vm.stopPrank();
 
         assertEq(returnedPayload, address(payload), "starguard-returned-payload-mismatch");
         (plottedPayload,,) = starGuard.spellData();
@@ -555,6 +558,8 @@ contract OseroEthereum_20260716_Test is Test {
             1,
             "starguard-removed-from-subproxy"
         );
+
+        return gasUsed;
     }
 
     function _assertSpellPreconditions(bytes32 mintKey, bytes32 burnKey, bytes32 depositKey, bytes32 withdrawKey)
