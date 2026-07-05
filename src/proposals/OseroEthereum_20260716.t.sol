@@ -118,11 +118,36 @@ interface IATokenLike {
     function UNDERLYING_ASSET_ADDRESS() external view returns (address);
 }
 
+interface ILitePsmLike {
+    function bud(address usr) external view returns (uint256);
+    function kiss(address usr) external;
+}
+
+interface IAutoLineLike {
+    function exec(bytes32 ilk) external returns (uint256 line);
+    function ilks(bytes32 ilk)
+        external
+        view
+        returns (uint256 line, uint256 gap, uint48 ttl, uint48 last, uint48 lastInc);
+    function setIlk(bytes32 ilk, uint256 line, uint256 gap, uint256 ttl) external;
+}
+
+interface IVatLike {
+    function ilks(bytes32 ilk)
+        external
+        view
+        returns (uint256 Art, uint256 rate, uint256 spot, uint256 line, uint256 dust);
+}
+
 contract OseroEthereum_20260716_Test is Test {
     // Osero PAU stack was deployed at block 25,383,064; the forum pre-state readbacks use block 25,431,261.
     uint256 internal constant MAINNET_FORK_BLOCK = 25_431_261;
 
     address internal constant MCD_PAUSE_PROXY = 0xBE8E3e3618f7474F8cB1d074A26afFef007E98FB;
+    // Sky Core addresses. Source: https://github.com/sky-ecosystem/dss-chain-log
+    address internal constant MCD_LITE_PSM_USDC_A = 0xf6e72Db5454dd049d0788e411b06CfAF16853042;
+    address internal constant MCD_IAM_AUTO_LINE = 0xC7Bdd1F2B16447dcf3dE045C4a039A60EC2f0ba3;
+    address internal constant MCD_VAT = 0x35D1b3F3D7966A1DFe207aa4514C12a259A0492B;
     address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
     address internal constant PERMISSIONLESS_EXECUTOR = address(0xE2E);
 
@@ -148,6 +173,13 @@ contract OseroEthereum_20260716_Test is Test {
 
     uint256 internal constant OPERATIONAL_TEST_AMOUNT = 100_000e18;
     uint256 internal constant MAX_EXECUTION_GAS = 30_000_000;
+
+    // ALLOCATOR-PRYSM-A DC-IAM target parameters from the coordinated Sky Core spell
+    // (AutoLine values are denominated in rad): maxLine = 5,000,000 USDS, gap = 1,000,000 USDS.
+    uint256 internal constant RAD = 1e45;
+    uint256 internal constant ALLOCATOR_MAX_LINE = 5_000_000 * RAD;
+    uint256 internal constant ALLOCATOR_GAP = 1_000_000 * RAD;
+    uint256 internal constant ALLOCATOR_TTL = 1 days;
 
     IOseroPauControllerLike internal constant controller = IOseroPauControllerLike(OseroEthereum.OSERO_CONTROLLER);
     IRateLimitsLike internal constant rateLimits = IRateLimitsLike(OseroEthereum.OSERO_RATE_LIMITS);
@@ -194,13 +226,37 @@ contract OseroEthereum_20260716_Test is Test {
     //   test_ETHEREUM_spellExecutionConfiguresAllActions,
     //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
 
-    // TODO(core-spell): Replace this pre-Core fork (`MAINNET_FORK_BLOCK`) with a post-Core fork block or execute
-    // the coordinated July 16 Sky Core spell fixture, then assert LitePSM.bud(OSERO_ALM_PROXY) == 1.
-    // TODO(core-spell): In the same post-Core state, assert ALLOCATOR-PRYSM-A DC-IAM target parameters:
-    // maxLine == 5_000_000e18 and gap == 1_000_000e18. This is the remaining Good-to-Deploy gate.
+    // The coordinated July 16 Sky Core spell is not yet on-chain at `MAINNET_FORK_BLOCK`, so setUp() simulates
+    // its two Osero-relevant actions (LitePSM whitelisting of the ALMProxy and the ALLOCATOR-PRYSM-A DC-IAM
+    // parameters) by pranking the MCD Pause Proxy. See _simulateCoordinatedSkyCoreSpell().
+    // test_ETHEREUM_coordinatedCoreSpellSimulationMatchesTargetParameters asserts the resulting state.
 
     function setUp() public {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), MAINNET_FORK_BLOCK);
+
+        _simulateCoordinatedSkyCoreSpell();
+    }
+
+    /// @dev Simulates the coordinated July 16 Sky Core spell actions that gate the Osero launch. The MCD Pause
+    /// Proxy is ward on both the LitePSM and the AutoLine, so pranking it reproduces the Core spell's effect.
+    function _simulateCoordinatedSkyCoreSpell() internal {
+        vm.startPrank(MCD_PAUSE_PROXY);
+
+        // Whitelist the Osero ALMProxy on the LitePSM for USDC swaps.
+        // Before: LitePSM.bud(OSERO_ALM_PROXY) == 0. After: bud == 1.
+        ILitePsmLike(MCD_LITE_PSM_USDC_A).kiss(OseroEthereum.OSERO_ALM_PROXY);
+
+        // Set the ALLOCATOR-PRYSM-A DC-IAM target parameters.
+        // Before: maxLine = 10,000,000 rad, gap = 10,000,000 rad, ttl = 1 days (initial PAU deployment values).
+        // After: maxLine = 5,000,000 rad, gap = 1,000,000 rad, ttl = 1 days.
+        IAutoLineLike(MCD_IAM_AUTO_LINE)
+            .setIlk(OseroEthereum.OSERO_ILK, ALLOCATOR_MAX_LINE, ALLOCATOR_GAP, ALLOCATOR_TTL);
+
+        vm.stopPrank();
+
+        // Permissionless keeper action: rebases vat.ilks(ilk).line to min(debt + gap, maxLine).
+        // Before: vat line = 10,000,000 rad. After: vat line = 1,000,000 rad (ilk debt is zero at the fork block).
+        IAutoLineLike(MCD_IAM_AUTO_LINE).exec(OseroEthereum.OSERO_ILK);
     }
 
     function test_ETHEREUM_deploymentAndPauSystemPreconfiguration() public {
@@ -311,6 +367,19 @@ contract OseroEthereum_20260716_Test is Test {
 
         assertEq(IATokenLike(SparkLend.USDS_SPTOKEN).POOL(), SparkLend.POOL, "sptoken-pool-mismatch");
         assertEq(IATokenLike(SparkLend.USDS_SPTOKEN).UNDERLYING_ASSET_ADDRESS(), USDS, "sptoken-underlying-mismatch");
+    }
+
+    function test_ETHEREUM_coordinatedCoreSpellSimulationMatchesTargetParameters() public view {
+        assertEq(ILitePsmLike(MCD_LITE_PSM_USDC_A).bud(OseroEthereum.OSERO_ALM_PROXY), 1, "almproxy-not-litepsm-bud");
+
+        (uint256 maxLine, uint256 gap, uint48 ttl,,) = IAutoLineLike(MCD_IAM_AUTO_LINE).ilks(OseroEthereum.OSERO_ILK);
+        assertEq(maxLine, ALLOCATOR_MAX_LINE, "autoline-max-line-mismatch");
+        assertEq(gap, ALLOCATOR_GAP, "autoline-gap-mismatch");
+        assertEq(ttl, ALLOCATOR_TTL, "autoline-ttl-mismatch");
+
+        // With zero ilk debt at the fork block, AutoLine.exec() leaves the vat debt ceiling at the gap.
+        (,,, uint256 vatLine,) = IVatLike(MCD_VAT).ilks(OseroEthereum.OSERO_ILK);
+        assertEq(vatLine, ALLOCATOR_GAP, "vat-line-not-rebased-to-gap");
     }
 
     function test_ETHEREUM_scopeKeysAndEncodedParametersMatchTechnicalScope() public {
