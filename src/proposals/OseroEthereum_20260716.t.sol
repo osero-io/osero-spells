@@ -178,7 +178,8 @@ contract OseroEthereum_20260716_Test is Test {
     //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
     // - RateLimits.setRateLimitData(USDS mint key, 5M, 5M/day):
     //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
+    //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent,
+    //   test_ETHEREUM_usdsMintRateLimitRejectsOversizedMint.
     // - RateLimits.setUnlimitedRateLimitData(USDS burn key):
     //   test_ETHEREUM_spellExecutionConfiguresAllActions,
     //   test_ETHEREUM_usdsMintBurnOperationalThroughAdministeredAgent.
@@ -187,7 +188,8 @@ contract OseroEthereum_20260716_Test is Test {
     //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
     // - RateLimits.setRateLimitData(Spark USDS deposit key, 5M, 5M/day):
     //   test_ETHEREUM_spellExecutionConfiguresAllActions,
-    //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
+    //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent,
+    //   test_ETHEREUM_sparkUsdsDepositRateLimitRejectsOversizedDeposit.
     // - RateLimits.setUnlimitedRateLimitData(Spark USDS withdraw key):
     //   test_ETHEREUM_spellExecutionConfiguresAllActions,
     //   test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent.
@@ -416,6 +418,15 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(rateLimits.getCurrentRateLimit(burnKey), type(uint256).max, "burn-limit-not-still-unlimited");
     }
 
+    function test_ETHEREUM_usdsMintRateLimitRejectsOversizedMint() public {
+        _executeSpellViaStarGuard(new OseroEthereum_20260716());
+
+        _expectCallAsOseroActorRevert(
+            bytes("RateLimits/rate-limit-exceeded"),
+            abi.encodeCall(IOseroPauControllerLike.usds_mint, (USDS_MINT_MAX_LIMIT + 1))
+        );
+    }
+
     function test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent() public {
         _executeSpellViaStarGuard(new OseroEthereum_20260716());
 
@@ -480,6 +491,22 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-restored");
         assertEq(rateLimits.getCurrentRateLimit(mintKey), USDS_MINT_MAX_LIMIT, "mint-limit-not-refilled-after-burn");
         assertEq(rateLimits.getCurrentRateLimit(burnKey), type(uint256).max, "burn-limit-changed");
+    }
+
+    function test_ETHEREUM_sparkUsdsDepositRateLimitRejectsOversizedDeposit() public {
+        _executeSpellViaStarGuard(new OseroEthereum_20260716());
+
+        deal(USDS, OseroEthereum.OSERO_ALM_PROXY, SPARKLEND_USDS_DEPOSIT_MAX + 1);
+        assertEq(
+            usds.balanceOf(OseroEthereum.OSERO_ALM_PROXY), SPARKLEND_USDS_DEPOSIT_MAX + 1, "proxy-usds-deal-failed"
+        );
+
+        _expectCallAsOseroActorRevert(
+            bytes("RateLimits/rate-limit-exceeded"),
+            abi.encodeCall(
+                IOseroPauControllerLike.aave_deposit, (SparkLend.USDS_SPTOKEN, SPARKLEND_USDS_DEPOSIT_MAX + 1)
+            )
+        );
     }
 
     function test_ETHEREUM_starGuardExecutionGasWithinBlockLimit() public {
@@ -637,6 +664,15 @@ contract OseroEthereum_20260716_Test is Test {
         assertEq(afterData.slope, beforeData.slope, string.concat(label, "-slope-changed"));
         assertEq(afterData.lastAmount, beforeData.lastAmount, string.concat(label, "-last-amount-changed"));
         assertEq(afterData.lastUpdated, beforeData.lastUpdated, string.concat(label, "-last-updated-changed"));
+    }
+
+    function _expectCallAsOseroActorRevert(bytes memory revertData, bytes memory data) internal {
+        IAdministeredAgentLike agent = IAdministeredAgentLike(OseroEthereum.OSERO_ADMINISTERED_AGENT);
+        assertTrue(agent.getIsActor(OseroEthereum.OSERO_OPERATOR), "osero-operator-not-agent-actor");
+
+        vm.prank(OseroEthereum.OSERO_OPERATOR);
+        vm.expectRevert(revertData);
+        agent.call(OseroEthereum.OSERO_CONTROLLER, data);
     }
 
     function _callAsOseroActor(bytes memory data) internal returns (bytes memory result) {
