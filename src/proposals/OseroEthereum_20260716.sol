@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity 0.8.34;
 
-import {Ethereum as OseroEthereum} from "@osero/address-registry/Ethereum.sol";
+import {Ethereum as OseroEthereum} from "osero-address-registry/Ethereum.sol";
 import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
 import {SparkLend} from "spark-address-registry/SparkLend.sol";
 

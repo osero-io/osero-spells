@@ -5,9 +5,4 @@ libs = ["lib"]
 solc = "0.8.34"
 evm_version = "cancun"
 
-
-remappings = [
-    "@osero/address-registry/=lib/osero-address-registry/src/"
-]
-
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

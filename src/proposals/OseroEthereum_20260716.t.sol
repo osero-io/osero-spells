@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-import {Ethereum as OseroEthereum} from "@osero/address-registry/Ethereum.sol";
+import {Ethereum as OseroEthereum} from "osero-address-registry/Ethereum.sol";
 import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
 import {SparkLend} from "spark-address-registry/SparkLend.sol";
 
