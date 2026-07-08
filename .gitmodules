@@ -7,3 +7,6 @@
 [submodule "lib/spark-address-registry"]
 	path = lib/spark-address-registry
 	url = https://github.com/sparkdotfi/spark-address-registry
+[submodule "lib/osero-address-registry"]
+	path = lib/osero-address-registry
+	url = https://github.com/osero-io/osero-address-registry

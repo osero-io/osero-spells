@@ -1,66 +1,54 @@
-## Foundry
+# Osero Spells
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Spells (governance payloads) for the Osero Prime Agent in the Sky ecosystem.
 
-Foundry consists of:
+Spells live in `src/proposals/`, one `OseroEthereum_YYYYMMDD.sol` payload plus its
+`OseroEthereum_YYYYMMDD.t.sol` fork tests per target date. Payloads are executed by the Osero
+SubProxy through the [StarGuard](https://github.com/sky-ecosystem/star-guard): governance plots the
+payload address and codehash, then anyone can `exec()` it. Shared, always-run tests and helpers live
+in `src/test-harness/`.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+## Setup
 
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
+The repo ships a [devenv](https://devenv.sh/) environment with Foundry preinstalled:
 
 ```shell
-$ forge build
+devenv shell
 ```
 
-### Test
+Alternatively, install [Foundry](https://getfoundry.sh/) yourself.
+
+Tests fork Ethereum mainnet, so an archive-capable RPC endpoint is required in `.env`:
 
 ```shell
-$ forge test
+MAINNET_RPC_URL=<your-ethereum-mainnet-archive-rpc-url>
 ```
 
-### Format
+## Build
 
 ```shell
-$ forge fmt
+forge build
 ```
 
-### Gas Snapshots
+## Test
+
+Spell tests only (what matters for a spell review — the library tests don't count toward spell
+coverage):
 
 ```shell
-$ forge snapshot
+forge test --match-path "src/proposals/*"
 ```
 
-### Anvil
+Everything, including library unit tests (CI runs this):
 
 ```shell
-$ anvil
+forge test
 ```
 
-### Deploy
+## Format
 
 ```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+forge fmt
 ```
 
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+CI enforces `forge fmt --check`, `forge build --sizes`, and the full test suite.

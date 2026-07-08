@@ -5,6 +5,9 @@
       "rev": "620536fa5277db4e3fd46772d5cbc1ea0696fb43"
     }
   },
+  "lib/osero-address-registry": {
+    "rev": "62d5fe15537d70a3a64aa5bbd853cacf6471aecb"
+  },
   "lib/sky-pau-registry": {
     "rev": "7b4493a7800b355ef5c9cc43e569c5e8d6fd97f8"
   },
