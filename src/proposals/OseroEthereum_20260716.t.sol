@@ -24,12 +24,12 @@ import {CommonPauSpellTests, ExpectedIntegration} from "../test-harness/CommonPa
 import {OseroEthereum_20260716} from "./OseroEthereum_20260716.sol";
 
 contract OseroEthereum_20260716_Test is CommonPauSpellTests {
-    // Osero PAU stack was deployed at block 25,383,064; the forum pre-state readbacks use block 25,431,261.
-    uint256 internal constant MAINNET_FORK_BLOCK = 25_431_261;
+    // The spell was deployed at block 25,496,131; fork there so the deployed payload exists on the
+    // fork. The PAU pre-state asserted below is unchanged since the forum readbacks at block 25,431,261.
+    uint256 internal constant MAINNET_FORK_BLOCK = 25_496_131;
 
-    // The on-chain 2026-07-16 payload; keep address(0) until the spell is deployed, then the
-    // tests (including the bytecode match) run against the deployed instance.
-    address internal constant DEPLOYED_PAYLOAD = address(0);
+    // The on-chain 2026-07-16 payload; all tests, including the bytecode match, run against it.
+    address internal constant DEPLOYED_PAYLOAD = 0x5D9311fcDda62c08EB9F1115Ca804881a6660445;
 
     // SparkLend addresses from the spark-address-registry. Independent verification source:
     // the approved technical-scope forum post,
