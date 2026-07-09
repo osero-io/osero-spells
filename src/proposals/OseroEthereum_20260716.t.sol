@@ -237,10 +237,10 @@ contract OseroEthereum_20260716_Test is CommonPauSpellTests {
         assertEq(usds.allowance(OSERO_ALLOCATOR_BUFFER, OSERO_ALM_PROXY), 0, "almproxy-already-buffer-spender");
         assertEq(controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN), 0, "spark-slippage-already-set");
 
-        _assertZeroRateLimit(USDS_MINT_RATE_LIMIT_KEY, "mint");
-        _assertZeroRateLimit(USDS_BURN_RATE_LIMIT_KEY, "burn");
-        _assertZeroRateLimit(SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY, "spark-deposit");
-        _assertZeroRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "spark-withdraw");
+        _assertUnsetRateLimit(USDS_MINT_RATE_LIMIT_KEY, "mint");
+        _assertUnsetRateLimit(USDS_BURN_RATE_LIMIT_KEY, "burn");
+        _assertUnsetRateLimit(SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY, "spark-deposit");
+        _assertUnsetRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "spark-withdraw");
 
         _executeSpellViaStarGuard(payload);
 
@@ -491,6 +491,8 @@ contract OseroEthereum_20260716_Test is CommonPauSpellTests {
         agent.call(OSERO_CONTROLLER, abi.encodeCall(IOseroPauControllerLike.usds_mint, (OPERATIONAL_TEST_AMOUNT)));
     }
 
+    /// @dev Config for the inherited `test_ETHEREUM_onlyExpectedControllerIntegrations`; update
+    ///      only when the controller's integration config changes (e.g. a facet is onboarded).
     function _expectedControllerIntegrations() internal pure override returns (ExpectedIntegration[] memory expected) {
         expected = new ExpectedIntegration[](2);
         expected[0] = ExpectedIntegration(USDS_FACET_INTEGRATION_ID, SKY_PAU_USDS_FACET, 8, "usds");

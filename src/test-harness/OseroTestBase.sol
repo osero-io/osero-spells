@@ -4,6 +4,9 @@ pragma solidity 0.8.34;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
+import {Ethereum as OseroEthereum} from "osero-address-registry/Ethereum.sol";
+import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
+
 struct PauDispatch {
     address facet;
     bytes4 delegateSelector;
@@ -156,29 +159,31 @@ abstract contract OseroTestBase is Test {
     address internal constant MCD_VAT = 0x35D1b3F3D7966A1DFe207aa4514C12a259A0492B;
     address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
 
-    // Osero PAU addresses. Sources: https://chainlog.skyeco.com/ where a key exists
-    // (noted per address), otherwise the approved technical-scope forum post:
+    // Osero PAU addresses from the osero-address-registry. Independent verification sources:
+    // https://chainlog.skyeco.com/ where a key exists (noted per address), otherwise the approved
+    // technical-scope forum post:
     // https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023
-    address internal constant OSERO_PROXY = 0x24fdcd3bFA5C2553e05B2f9AD0365EBC296278D3; // chainlog: PRYSM_SUBPROXY
-    address internal constant OSERO_STAR_GUARD = 0xBfA2D1dA838E55A74c61699e164cDFF8cF0cF0e2; // chainlog: PRYSM_STARGUARD
-    address internal constant OSERO_ALLOCATOR_VAULT = 0x146181Aa9B362EaEC2eC3aDd7429a06D53B43d1a; // chainlog: ALLOCATOR_PRYSM_A_VAULT
-    address internal constant OSERO_ALLOCATOR_BUFFER = 0xD0BB61b34771146e31055f20f329cDf97429F889; // chainlog: ALLOCATOR_PRYSM_A_BUFFER
-    bytes32 internal constant OSERO_ILK = "ALLOCATOR-PRYSM-A";
-    address internal constant OSERO_OPERATOR = 0x29c5A20A49A0D522A3714af97C517a908946b6A8;
-    address internal constant OSERO_ACCESS_CONTROLS = 0x791D2a017532CfAD881c446e6bF93BbC3c0778b2;
-    address internal constant OSERO_ALM_PROXY = 0x6d370e359e9cbd0Fd35Bb38fAF705D84238CB884;
-    address internal constant OSERO_RATE_LIMITS = 0xE9a78f34fe497e2186f81B8c014cd93B308BC62a;
-    address internal constant OSERO_CONTROLLER = 0x24169Afb34fAe4D4356BC54Bd80319131e35ca38;
-    address internal constant OSERO_ADMINISTERED_AGENT = 0x1837505D104F7a6D8b7e19452610B0A3D652EF12;
-    address internal constant SOTER_OPERATOR = 0x3dE688267Cf099307aBdd85F64D8efe03D0b2b26;
-    address internal constant SOTER_FREEZER = 0xF61F90907551a8A23f0f8EEE9658Fa53326de603;
+    address internal constant OSERO_PROXY = OseroEthereum.OSERO_PROXY; // chainlog: PRYSM_SUBPROXY
+    address internal constant OSERO_STAR_GUARD = OseroEthereum.OSERO_STAR_GUARD; // chainlog: PRYSM_STARGUARD
+    address internal constant OSERO_ALLOCATOR_VAULT = OseroEthereum.OSERO_ALLOCATOR_VAULT; // chainlog: ALLOCATOR_PRYSM_A_VAULT
+    address internal constant OSERO_ALLOCATOR_BUFFER = OseroEthereum.OSERO_ALLOCATOR_BUFFER; // chainlog: ALLOCATOR_PRYSM_A_BUFFER
+    bytes32 internal constant OSERO_ILK = OseroEthereum.OSERO_ILK;
+    address internal constant OSERO_OPERATOR = OseroEthereum.OSERO_OPERATOR;
+    address internal constant OSERO_ACCESS_CONTROLS = OseroEthereum.OSERO_ACCESS_CONTROLS;
+    address internal constant OSERO_ALM_PROXY = OseroEthereum.OSERO_ALM_PROXY;
+    address internal constant OSERO_RATE_LIMITS = OseroEthereum.OSERO_RATE_LIMITS;
+    address internal constant OSERO_CONTROLLER = OseroEthereum.OSERO_CONTROLLER;
+    address internal constant OSERO_ADMINISTERED_AGENT = OseroEthereum.OSERO_ADMINISTERED_AGENT;
+    address internal constant SOTER_OPERATOR = OseroEthereum.SOTER_OPERATOR;
+    address internal constant SOTER_FREEZER = OseroEthereum.SOTER_FREEZER;
 
-    // Sky PAU addresses. Sources: https://chainlog.skyeco.com/ for the Beacon (key: PAU_BEACON),
-    // the technical-scope forum post above for the facets and the assembler.
-    address internal constant SKY_PAU_BEACON = 0x829dC2b7E94B1954F0764E573f2E0d45Afa28199;
-    address internal constant SKY_PAU_DEFAULT_PAU_ASSEMBLER = 0xc812aAD3FaE2D3511C664374B601a9BeBFeCCa2E;
-    address internal constant SKY_PAU_USDS_FACET = 0x1221CC4B85Ab260660aD21C2829e0EB516dffBc7;
-    address internal constant SKY_PAU_AAVE_FACET = 0x8CE890A96a193ff2DD4B2eA3C682326F655f6b62;
+    // Sky PAU addresses from the sky-pau-registry. Independent verification sources:
+    // https://chainlog.skyeco.com/ for the Beacon (key: PAU_BEACON), the technical-scope forum
+    // post above for the facets and the assembler.
+    address internal constant SKY_PAU_BEACON = SkyPau.BEACON;
+    address internal constant SKY_PAU_DEFAULT_PAU_ASSEMBLER = SkyPau.DEFAULT_PAU_ASSEMBLER;
+    address internal constant SKY_PAU_USDS_FACET = SkyPau.USDS_FACET;
+    address internal constant SKY_PAU_AAVE_FACET = SkyPau.AAVE_FACET;
 
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
@@ -291,12 +296,13 @@ abstract contract OseroTestBase is Test {
         );
     }
 
-    function _assertZeroRateLimit(bytes32 key, string memory label) internal view {
+    /// @dev Asserts the rate limit was never onboarded
+    function _assertUnsetRateLimit(bytes32 key, string memory label) internal view {
         IRateLimitsLike.RateLimitData memory data = rateLimits.getRateLimitData(key);
-        assertEq(data.maxAmount, 0, string.concat(label, "-zero-max-amount"));
-        assertEq(data.slope, 0, string.concat(label, "-zero-slope"));
-        assertEq(data.lastAmount, 0, string.concat(label, "-zero-last-amount"));
-        assertEq(data.lastUpdated, 0, string.concat(label, "-zero-last-updated"));
+        assertEq(data.maxAmount, 0, string.concat(label, "-unset-max-amount"));
+        assertEq(data.slope, 0, string.concat(label, "-unset-slope"));
+        assertEq(data.lastAmount, 0, string.concat(label, "-unset-last-amount"));
+        assertEq(data.lastUpdated, 0, string.concat(label, "-unset-last-updated"));
     }
 
     function _getBytecodeMetadataLength(address target) internal view returns (uint256 length) {
