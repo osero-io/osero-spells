@@ -3,6 +3,8 @@ pragma solidity 0.8.34;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
+import {SparkLend} from "spark-address-registry/SparkLend.sol";
+
 import {
     IALMProxyLike,
     IATokenLike,
@@ -29,14 +31,11 @@ contract OseroEthereum_20260716_Test is CommonPauSpellTests {
     // tests (including the bytecode match) run against the deployed instance.
     address internal constant DEPLOYED_PAYLOAD = address(0);
 
-    // SparkLend addresses. Source of truth (independent of the registry the payload imports from):
+    // SparkLend addresses from the spark-address-registry. Independent verification source:
     // the approved technical-scope forum post,
     // https://forum.skyeco.com/t/july-16-2026-proposed-changes-to-osero-for-upcoming-spell/28023.
-    // Registry permalinks:
-    // https://github.com/sparkdotfi/spark-address-registry/blob/ef21cffbd11ba30c4859213fa37f82b58387b6a6/src/SparkLend.sol#L15
-    address internal constant SPARKLEND_POOL = 0xC13e21B648A5Ee794902342038FF3aDAB66BE987;
-    // https://github.com/sparkdotfi/spark-address-registry/blob/ef21cffbd11ba30c4859213fa37f82b58387b6a6/src/SparkLend.sol#L64
-    address internal constant SPARKLEND_USDS_SPTOKEN = 0xC02aB1A5eaA8d1B114EF786D9bde108cD4364359;
+    address internal constant SPARKLEND_POOL = SparkLend.POOL;
+    address internal constant SPARKLEND_USDS_SPTOKEN = SparkLend.USDS_SPTOKEN;
 
     bytes32 internal constant USDS_FACET_INTEGRATION_ID = "USDS_FACET";
     bytes32 internal constant AAVE_FACET_INTEGRATION_ID = "AAVE_FACET";
