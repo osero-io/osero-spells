@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.34;
+pragma solidity 0.8.34;
 
 abstract contract BaseSpell {
-    function isExecutable() external pure virtual returns (bool) {
+    function isExecutable() external view virtual returns (bool) {
         return true;
     }
 
