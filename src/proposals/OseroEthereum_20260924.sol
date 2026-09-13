@@ -29,28 +29,39 @@ contract OseroEthereum_20260924 is BaseSpell {
     function execute() external override {
         // [Ethereum] Authorize the Sky PAS Configurator on the Osero AccessControls and RateLimits
         //   Forum : https://forum.skyeco.com/t/september-24-2026-proposed-changes-to-osero-for-upcoming-spell/28224
+        //   Proposed actions #1 and #2
+        _authorizePasConfigurator();
+
+        // [Ethereum] Raise the USDS mint and SparkLend USDS deposit rate limits on the PAU rate limits
+        //   Forum : https://forum.skyeco.com/t/september-24-2026-proposed-changes-to-osero-for-upcoming-spell/28224
+        //   Proposed actions #3 and #4
+        _setupRateLimits();
+    }
+
+    function _authorizePasConfigurator() private {
+        // BEFORE: Configurator holds neither admin role; SubProxy retains both.
         PASAuthorizeInPAU.authorize({
             configurator: PAS_CONFIGURATOR,
             accessControls: OseroEthereum.OSERO_ACCESS_CONTROLS,
             rateLimits: OseroEthereum.OSERO_RATE_LIMITS
-        }); // BEFORE: Configurator holds neither admin role; SubProxy retains both.
-
-        // [Ethereum] Raise the USDS mint and SparkLend USDS deposit rate limits on the PAU rate limits
-        //   Forum : https://forum.skyeco.com/t/september-24-2026-proposed-changes-to-osero-for-upcoming-spell/28224
-        _setupRateLimits();
+        });
     }
 
     function _setupRateLimits() private {
-        // USDS mint:              BEFORE: 5,000,000 max, 5,000,000 / day slope. AFTER: 50,000,000 max, 50,000,000 / day slope.
-        RateLimitsHelper.setUsdsMintRateLimit(OseroEthereum.OSERO_RATE_LIMITS, USDS_MINT_MAX_LIMIT, USDS_MINT_SLOPE);
+        // Forum Proposed action #3
+        RateLimitsHelper.setUsdsMintRateLimit({
+            rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
+            maxAmount: USDS_MINT_MAX_LIMIT, // BEFORE: 5_000_000e18
+            slope: USDS_MINT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days
+        });
 
-        // SparkLend USDS deposit: BEFORE: 5,000,000 max, 5,000,000 / day slope. AFTER: 50,000,000 max, 50,000,000 / day slope.
-        RateLimitsHelper.setSparkLendDepositRateLimit(
-            OseroEthereum.OSERO_RATE_LIMITS,
-            SparkLend.USDS_SPTOKEN,
-            USDS,
-            SPARKLEND_USDS_DEPOSIT_MAX,
-            SPARKLEND_USDS_DEPOSIT_SLOPE
-        );
+        // Forum Proposed action #4
+        RateLimitsHelper.setSparkLendDepositRateLimit({
+            rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
+            spToken: SparkLend.USDS_SPTOKEN,
+            underlyingAsset: USDS,
+            maxAmount: SPARKLEND_USDS_DEPOSIT_MAX, // BEFORE: 5_000_000e18
+            slope: SPARKLEND_USDS_DEPOSIT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days
+        });
     }
 }

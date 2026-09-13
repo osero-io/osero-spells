@@ -133,12 +133,12 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         assertEq(
             controller.aave_getDepositRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL, USDS),
             SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
-            "spark-deposit-key-mismatch"
+            "sparklend-deposit-key-mismatch"
         );
         assertEq(
             controller.aave_getWithdrawRateLimitKey(SPARKLEND_USDS_SPTOKEN, SPARKLEND_POOL),
             SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
-            "spark-withdraw-key-mismatch"
+            "sparklend-withdraw-key-mismatch"
         );
 
         OseroEthereum_20260924 spell = OseroEthereum_20260924(payload);
@@ -182,20 +182,20 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
             SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY,
             SPARKLEND_USDS_DEPOSIT_MAX,
             SPARKLEND_USDS_DEPOSIT_SLOPE,
-            "spark-deposit"
+            "sparklend-deposit"
         );
     }
 
     function test_ETHEREUM_unlimitedRateLimitsAndLaunchConfigurationUnchanged() public {
         _assertLaunchConfiguration();
         _assertExistingUnlimitedRateLimit(USDS_BURN_RATE_LIMIT_KEY, "burn");
-        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "spark-withdraw");
+        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "sparklend-withdraw");
 
         _executeSpellViaStarGuard(payload);
 
         _assertLaunchConfiguration();
         _assertExistingUnlimitedRateLimit(USDS_BURN_RATE_LIMIT_KEY, "burn");
-        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "spark-withdraw");
+        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "sparklend-withdraw");
     }
 
     function test_ETHEREUM_spellEmitsOnlyExpectedRoleAndRateLimitChanges() public {
@@ -329,7 +329,7 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         );
 
         _assertExistingUnlimitedRateLimit(USDS_BURN_RATE_LIMIT_KEY, "burn");
-        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "spark-withdraw");
+        _assertExistingUnlimitedRateLimit(SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY, "sparklend-withdraw");
     }
 
     function test_ETHEREUM_pasConfiguratorCallsControllerActionAfterAuthorizationAndFuturePairing() public {
@@ -469,7 +469,7 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         );
     }
 
-    function test_ETHEREUM_sparkUsdsDepositWithdrawOperationalThroughAdministeredAgent() public {
+    function test_ETHEREUM_sparklendUsdsDepositWithdrawOperationalThroughAdministeredAgent() public {
         _repayAllocatorDebtForOperationalTest();
 
         _executeSpellViaStarGuard(payload);
@@ -498,7 +498,7 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         uint256 proxySpUsdsAfterDeposit = spUsds.balanceOf(OSERO_ALM_PROXY);
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-deposited");
         assertGe(proxySpUsdsAfterDeposit - proxySpUsdsStart, minSpUsdsOut, "proxy-spusds-received-too-low");
-        assertEq(usds.allowance(OSERO_ALM_PROXY, SPARKLEND_POOL), 0, "spark-pool-usds-approval-not-cleared");
+        assertEq(usds.allowance(OSERO_ALM_PROXY, SPARKLEND_POOL), 0, "sparklend-pool-usds-approval-not-cleared");
         assertEq(
             rateLimits.getCurrentRateLimit(SPARKLEND_USDS_DEPOSIT_RATE_LIMIT_KEY),
             SPARKLEND_USDS_DEPOSIT_MAX - OPERATIONAL_TEST_AMOUNT,
@@ -545,7 +545,7 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         assertEq(rateLimits.getCurrentRateLimit(USDS_BURN_RATE_LIMIT_KEY), type(uint256).max, "burn-limit-changed");
     }
 
-    function test_ETHEREUM_sparkUsdsDepositRateLimitRejectsOversizedDeposit() public {
+    function test_ETHEREUM_sparklendUsdsDepositRateLimitRejectsOversizedDeposit() public {
         _executeSpellViaStarGuard(payload);
 
         deal(USDS, OSERO_ALM_PROXY, SPARKLEND_USDS_DEPOSIT_MAX + 1);
@@ -559,7 +559,7 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         );
     }
 
-    function test_ETHEREUM_sparkUsdsDepositRateLimitRecoversOverTime() public {
+    function test_ETHEREUM_sparklendUsdsDepositRateLimitRecoversOverTime() public {
         _repayAllocatorDebtForOperationalTest();
 
         _executeSpellViaStarGuard(payload);
@@ -667,7 +667,9 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
         assertEq(controller.usds_vault(), OSERO_ALLOCATOR_VAULT, "controller-vault-mismatch");
         assertEq(IAllocatorVaultLike(OSERO_ALLOCATOR_VAULT).wards(OSERO_ALM_PROXY), 1, "almproxy-not-vault-ward");
         assertEq(usds.allowance(OSERO_ALLOCATOR_BUFFER, OSERO_ALM_PROXY), type(uint256).max, "buffer-allowance-not-max");
-        assertEq(controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN), SPARKLEND_USDS_MAX_SLIPPAGE, "spark-slippage");
+        assertEq(
+            controller.aave_getMaxSlippage(SPARKLEND_USDS_SPTOKEN), SPARKLEND_USDS_MAX_SLIPPAGE, "sparklend-slippage"
+        );
     }
 
     function _assertExistingUnlimitedRateLimit(bytes32 key, string memory label) internal view {
