@@ -32,6 +32,26 @@ contract MockAaveFacet {
     }
 }
 
+contract MockPSMFacet {
+    function usdsToUSDCSwapRateLimitKey() external pure returns (bytes32) {
+        return keccak256("mock.psm.usdsToUSDCSwapRateLimitKey");
+    }
+
+    function usdcToUSDSSwapRateLimitKey() external pure returns (bytes32) {
+        return keccak256("mock.psm.usdcToUSDSSwapRateLimitKey");
+    }
+}
+
+contract MockERC4626Facet {
+    function getDepositRateLimitKey(address token, address asset) external pure returns (bytes32) {
+        return keccak256(abi.encode("mock.erc4626.depositRateLimitKey", token, asset));
+    }
+
+    function getWithdrawRateLimitKey(address token) external pure returns (bytes32) {
+        return keccak256(abi.encode("mock.erc4626.withdrawRateLimitKey", token));
+    }
+}
+
 contract MockRateLimits {
     bool public shouldRevert;
 
@@ -85,6 +105,28 @@ contract RateLimitsHelperHarness {
     function setUnlimitedSparkLendWithdrawRateLimit(address rateLimits, address spToken) external {
         RateLimitsHelper.setUnlimitedSparkLendWithdrawRateLimit(rateLimits, spToken);
     }
+
+    function setPsmUsdsToUsdcSwapRateLimit(address rateLimits, uint256 maxAmount, uint256 slope) external {
+        RateLimitsHelper.setPsmUsdsToUsdcSwapRateLimit(rateLimits, maxAmount, slope);
+    }
+
+    function setUnlimitedPsmUsdcToUsdsSwapRateLimit(address rateLimits) external {
+        RateLimitsHelper.setUnlimitedPsmUsdcToUsdsSwapRateLimit(rateLimits);
+    }
+
+    function setErc4626DepositRateLimit(
+        address rateLimits,
+        address token,
+        address asset,
+        uint256 maxAmount,
+        uint256 slope
+    ) external {
+        RateLimitsHelper.setErc4626DepositRateLimit(rateLimits, token, asset, maxAmount, slope);
+    }
+
+    function setUnlimitedErc4626WithdrawRateLimit(address rateLimits, address token) external {
+        RateLimitsHelper.setUnlimitedErc4626WithdrawRateLimit(rateLimits, token);
+    }
 }
 
 contract RateLimitsHelper_Test is Test {
@@ -95,6 +137,8 @@ contract RateLimitsHelper_Test is Test {
         // Install mock facets at the registry addresses the library hardcodes.
         vm.etch(SkyPau.USDS_FACET, address(new MockUSDSFacet()).code);
         vm.etch(SkyPau.AAVE_FACET, address(new MockAaveFacet()).code);
+        vm.etch(SkyPau.PSM_FACET, address(new MockPSMFacet()).code);
+        vm.etch(SkyPau.ERC4626_FACET, address(new MockERC4626Facet()).code);
 
         rateLimits = new MockRateLimits();
         harness = new RateLimitsHelperHarness();
@@ -173,5 +217,75 @@ contract RateLimitsHelper_Test is Test {
 
         vm.expectRevert(bytes("MockRateLimits/set-unlimited-rate-limit-data-revert"));
         harness.setUnlimitedSparkLendWithdrawRateLimit(address(rateLimits), address(1));
+    }
+
+    function testFuzz_setPsmUsdsToUsdcSwapRateLimit(uint256 maxAmount, uint256 slope) public {
+        RateLimitsHelper.setPsmUsdsToUsdcSwapRateLimit(address(rateLimits), maxAmount, slope);
+
+        assertEq(rateLimits.setRateLimitDataCallCount(), 1, "set-rate-limit-data-call-count");
+        assertEq(rateLimits.setUnlimitedRateLimitDataCallCount(), 0, "set-unlimited-rate-limit-data-call-count");
+        assertEq(rateLimits.lastKey(), MockPSMFacet(SkyPau.PSM_FACET).usdsToUSDCSwapRateLimitKey(), "key");
+        assertEq(rateLimits.lastMaxAmount(), maxAmount, "max-amount");
+        assertEq(rateLimits.lastSlope(), slope, "slope");
+    }
+
+    function test_setUnlimitedPsmUsdcToUsdsSwapRateLimit() public {
+        RateLimitsHelper.setUnlimitedPsmUsdcToUsdsSwapRateLimit(address(rateLimits));
+
+        assertEq(rateLimits.setRateLimitDataCallCount(), 0, "set-rate-limit-data-call-count");
+        assertEq(rateLimits.setUnlimitedRateLimitDataCallCount(), 1, "set-unlimited-rate-limit-data-call-count");
+        assertEq(rateLimits.lastKey(), MockPSMFacet(SkyPau.PSM_FACET).usdcToUSDSSwapRateLimitKey(), "key");
+    }
+
+    function testFuzz_setErc4626DepositRateLimit(address token, address asset, uint256 maxAmount, uint256 slope)
+        public
+    {
+        RateLimitsHelper.setErc4626DepositRateLimit(address(rateLimits), token, asset, maxAmount, slope);
+
+        bytes32 expectedKey = MockERC4626Facet(SkyPau.ERC4626_FACET).getDepositRateLimitKey(token, asset);
+
+        assertEq(rateLimits.setRateLimitDataCallCount(), 1, "set-rate-limit-data-call-count");
+        assertEq(rateLimits.setUnlimitedRateLimitDataCallCount(), 0, "set-unlimited-rate-limit-data-call-count");
+        assertEq(rateLimits.lastKey(), expectedKey, "key");
+        assertEq(rateLimits.lastMaxAmount(), maxAmount, "max-amount");
+        assertEq(rateLimits.lastSlope(), slope, "slope");
+    }
+
+    function testFuzz_setUnlimitedErc4626WithdrawRateLimit(address token) public {
+        RateLimitsHelper.setUnlimitedErc4626WithdrawRateLimit(address(rateLimits), token);
+
+        bytes32 expectedKey = MockERC4626Facet(SkyPau.ERC4626_FACET).getWithdrawRateLimitKey(token);
+
+        assertEq(rateLimits.setRateLimitDataCallCount(), 0, "set-rate-limit-data-call-count");
+        assertEq(rateLimits.setUnlimitedRateLimitDataCallCount(), 1, "set-unlimited-rate-limit-data-call-count");
+        assertEq(rateLimits.lastKey(), expectedKey, "key");
+    }
+
+    function test_setPsmUsdsToUsdcSwapRateLimit_bubblesRateLimitsRevert() public {
+        rateLimits.setShouldRevert(true);
+
+        vm.expectRevert(bytes("MockRateLimits/set-rate-limit-data-revert"));
+        harness.setPsmUsdsToUsdcSwapRateLimit(address(rateLimits), 1, 1);
+    }
+
+    function test_setUnlimitedPsmUsdcToUsdsSwapRateLimit_bubblesRateLimitsRevert() public {
+        rateLimits.setShouldRevert(true);
+
+        vm.expectRevert(bytes("MockRateLimits/set-unlimited-rate-limit-data-revert"));
+        harness.setUnlimitedPsmUsdcToUsdsSwapRateLimit(address(rateLimits));
+    }
+
+    function test_setErc4626DepositRateLimit_bubblesRateLimitsRevert() public {
+        rateLimits.setShouldRevert(true);
+
+        vm.expectRevert(bytes("MockRateLimits/set-rate-limit-data-revert"));
+        harness.setErc4626DepositRateLimit(address(rateLimits), address(1), address(2), 1, 1);
+    }
+
+    function test_setUnlimitedErc4626WithdrawRateLimit_bubblesRateLimitsRevert() public {
+        rateLimits.setShouldRevert(true);
+
+        vm.expectRevert(bytes("MockRateLimits/set-unlimited-rate-limit-data-revert"));
+        harness.setUnlimitedErc4626WithdrawRateLimit(address(rateLimits), address(1));
     }
 }
