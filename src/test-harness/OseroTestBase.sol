@@ -49,10 +49,13 @@ interface ISubProxyLike {
 interface IOseroPauControllerLike {
     function accessControls() external view returns (address);
     function beacon() external view returns (address);
+    function getConfig(bytes32 integrationId) external view returns (PauConfig memory config);
     function getDispatch(bytes4 callSelector) external view returns (PauDispatch memory dispatch);
     function integrations() external view returns (PauIntegration[] memory integrations_);
     function proxy() external view returns (address);
     function rateLimits() external view returns (address);
+    function removeIntegrations(bytes32[] calldata ids) external;
+    function updateIntegrations(bytes32[] calldata ids) external;
 
     function usds_setVault(address vault) external;
     function usds_mint(uint256 usdsAmount) external;
@@ -71,6 +74,32 @@ interface IOseroPauControllerLike {
         returns (bytes32 key);
     function aave_getMaxSlippage(address aToken) external view returns (uint256 maxSlippage);
     function aave_getWithdrawRateLimitKey(address aToken, address pool) external view returns (bytes32 key);
+
+    function erc4626_VERSION() external view returns (string memory);
+    function erc4626_setMaxExchangeRate(address token, uint256 shares, uint256 maxExpectedAssets) external;
+    function erc4626_deposit(address token, uint256 amount, uint256 minSharesOut) external returns (uint256 shares);
+    function erc4626_withdraw(address token, uint256 amount, uint256 maxSharesIn) external returns (uint256 shares);
+    function erc4626_redeem(address token, uint256 shares, uint256 minAssetsOut) external returns (uint256 assets);
+    function erc4626_EXCHANGE_RATE_PRECISION() external view returns (uint256);
+    function erc4626_getMaxExchangeRate(address token) external view returns (uint256);
+    function erc4626_getDepositRateLimitKey(address token, address asset) external view returns (bytes32);
+    function erc4626_getWithdrawRateLimitKey(address token) external view returns (bytes32);
+
+    function psm_VERSION() external view returns (string memory);
+    function psm_dai() external view returns (address);
+    function psm_daiUSDS() external view returns (address);
+    function psm_psm() external view returns (address);
+    function psm_usdc() external view returns (address);
+    function psm_usds() external view returns (address);
+    function psm_swapUSDSToUSDC(uint256 usdcAmount) external;
+    function psm_swapUSDCToUSDS(uint256 usdcAmount) external;
+    function psm_to18ConversionFactor() external view returns (uint256);
+    function psm_usdcToUSDSSwapRateLimitKey() external view returns (bytes32);
+    function psm_usdsToUSDCSwapRateLimitKey() external view returns (bytes32);
+}
+
+interface IBeaconLike {
+    function getConfig(bytes32 id) external view returns (PauConfig memory);
 }
 
 interface IRateLimitsLike {
@@ -157,6 +186,9 @@ abstract contract OseroTestBase is Test {
     address internal constant MCD_LITE_PSM_USDC_A = 0xf6e72Db5454dd049d0788e411b06CfAF16853042;
     address internal constant MCD_IAM_AUTO_LINE = 0xC7Bdd1F2B16447dcf3dE045C4a039A60EC2f0ba3;
     address internal constant MCD_VAT = 0x35D1b3F3D7966A1DFe207aa4514C12a259A0492B;
+    address internal constant MCD_DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address internal constant DAI_USDS = 0x3225737a9Bbb6473CB4a45b7244ACa2BeFdB276A;
+    address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
 
     // Osero PAU addresses from the osero-address-registry. Independent verification sources:
@@ -184,6 +216,8 @@ abstract contract OseroTestBase is Test {
     address internal constant SKY_PAU_DEFAULT_PAU_ASSEMBLER = SkyPau.DEFAULT_PAU_ASSEMBLER;
     address internal constant SKY_PAU_USDS_FACET = SkyPau.USDS_FACET;
     address internal constant SKY_PAU_AAVE_FACET = SkyPau.AAVE_FACET;
+    address internal constant SKY_PAU_ERC4626_FACET = SkyPau.ERC4626_FACET;
+    address internal constant SKY_PAU_PSM_FACET = SkyPau.PSM_FACET;
 
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
@@ -274,6 +308,19 @@ abstract contract OseroTestBase is Test {
         PauDispatch memory dispatch = controller.getDispatch(callSelector);
         assertEq(dispatch.facet, expectedFacet, string.concat(label, "-facet-mismatch"));
         assertNotEq(dispatch.delegateSelector, bytes4(0), string.concat(label, "-delegate-selector-not-set"));
+    }
+
+    function _assertWire(
+        bytes4 callSelector,
+        address expectedFacet,
+        bytes4 expectedDelegateSelector,
+        string memory label
+    ) internal view {
+        PauDispatch memory dispatch = controller.getDispatch(callSelector);
+        assertEq(dispatch.facet, expectedFacet, string.concat(label, "-facet-mismatch"));
+        assertEq(
+            dispatch.delegateSelector, expectedDelegateSelector, string.concat(label, "-delegate-selector-mismatch")
+        );
     }
 
     function _assertRateLimit(bytes32 key, uint256 maxAmount, uint256 slope, string memory label) internal view {

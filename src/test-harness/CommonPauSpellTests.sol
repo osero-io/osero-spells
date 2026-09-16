@@ -30,7 +30,10 @@ abstract contract CommonPauSpellTests is CommonSpellTests {
     }
 
     function test_ETHEREUM_onlyExpectedControllerIntegrations() public view {
-        ExpectedIntegration[] memory expected = _expectedControllerIntegrations();
+        _assertControllerIntegrations(_expectedControllerIntegrations());
+    }
+
+    function _assertControllerIntegrations(ExpectedIntegration[] memory expected) internal view {
         PauIntegration[] memory integrations = controller.integrations();
         assertEq(integrations.length, expected.length, "unexpected-controller-integration-count");
 
