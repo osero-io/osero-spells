@@ -15,16 +15,16 @@ import {RateLimitsHelper} from "../libraries/RateLimitsHelper.sol";
 /// @custom:forum https://forum.skyeco.com/t/september-24-2026-proposed-changes-to-osero-for-upcoming-spell/28224
 contract OseroEthereum_20260924 is BaseSpell {
     // Contract: USDS / Source: https://chainlog.skyeco.com/ (key: USDS)
-    address public constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
+    address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
 
     // Contract: Sky PAS Configurator / Source: https://chainlog.skyeco.com/ (key: PAS_CONFIGURATOR)
-    address public constant PAS_CONFIGURATOR = 0xb7E61Df6CAb0A51E9A5dab1A7DD3f942dDe5b929;
+    address internal constant PAS_CONFIGURATOR = 0xb7E61Df6CAb0A51E9A5dab1A7DD3f942dDe5b929;
 
-    uint256 public constant USDS_MINT_MAX_LIMIT = 50_000_000e18;
-    uint256 public constant USDS_MINT_SLOPE = uint256(50_000_000e18) / 1 days;
+    uint256 internal constant USDS_MINT_MAX_LIMIT = 50_000_000e18;
+    uint256 internal constant USDS_MINT_SLOPE = uint256(50_000_000e18) / 1 days;
 
-    uint256 public constant SPARKLEND_USDS_DEPOSIT_MAX = 50_000_000e18;
-    uint256 public constant SPARKLEND_USDS_DEPOSIT_SLOPE = uint256(50_000_000e18) / 1 days;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_MAX = 50_000_000e18;
+    uint256 internal constant SPARKLEND_USDS_DEPOSIT_SLOPE = uint256(50_000_000e18) / 1 days;
 
     function execute() external override {
         // [Ethereum] Authorize the Sky PAS Configurator on the Osero AccessControls and RateLimits
@@ -39,7 +39,8 @@ contract OseroEthereum_20260924 is BaseSpell {
     }
 
     function _authorizePasConfigurator() private {
-        // BEFORE: Configurator holds neither admin role; SubProxy retains both.
+        // BEFORE: Configurator holds neither admin role.
+        // AFTER:  Configurator holds both; SubProxy keeps both.
         PASAuthorizeInPAU.authorize({
             configurator: PAS_CONFIGURATOR,
             accessControls: OseroEthereum.OSERO_ACCESS_CONTROLS,
@@ -51,8 +52,8 @@ contract OseroEthereum_20260924 is BaseSpell {
         // Forum Proposed action #3
         RateLimitsHelper.setUsdsMintRateLimit({
             rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
-            maxAmount: USDS_MINT_MAX_LIMIT, // BEFORE: 5_000_000e18
-            slope: USDS_MINT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days
+            maxAmount: USDS_MINT_MAX_LIMIT, // BEFORE: 5_000_000e18, AFTER: 50_000_000e18
+            slope: USDS_MINT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days, AFTER: uint256(50_000_000e18) / 1 days
         });
 
         // Forum Proposed action #4
@@ -60,8 +61,8 @@ contract OseroEthereum_20260924 is BaseSpell {
             rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
             spToken: SparkLend.USDS_SPTOKEN,
             underlyingAsset: USDS,
-            maxAmount: SPARKLEND_USDS_DEPOSIT_MAX, // BEFORE: 5_000_000e18
-            slope: SPARKLEND_USDS_DEPOSIT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days
+            maxAmount: SPARKLEND_USDS_DEPOSIT_MAX, // BEFORE: 5_000_000e18, AFTER: 50_000_000e18
+            slope: SPARKLEND_USDS_DEPOSIT_SLOPE // BEFORE: uint256(5_000_000e18) / 1 days, AFTER: uint256(50_000_000e18) / 1 days
         });
     }
 }

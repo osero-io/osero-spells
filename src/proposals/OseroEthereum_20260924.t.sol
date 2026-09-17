@@ -16,8 +16,6 @@ import {
 } from "../test-harness/OseroTestBase.sol";
 import {CommonPauSpellTests, ExpectedIntegration} from "../test-harness/CommonPauSpellTests.sol";
 
-import {OseroEthereum_20260924} from "./OseroEthereum_20260924.sol";
-
 interface IPasConfiguratorLike {
     function beamState() external view returns (address);
     function setRateLimit(address rateLimits, bytes32 key, uint256 maxAmount, uint256 slope) external;
@@ -140,14 +138,6 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
             SPARKLEND_USDS_WITHDRAW_RATE_LIMIT_KEY,
             "sparklend-withdraw-key-mismatch"
         );
-
-        OseroEthereum_20260924 spell = OseroEthereum_20260924(payload);
-        assertEq(spell.USDS(), USDS, "payload-usds-mismatch");
-        assertEq(spell.PAS_CONFIGURATOR(), PAS_CONFIGURATOR, "payload-configurator-mismatch");
-        assertEq(spell.USDS_MINT_MAX_LIMIT(), USDS_MINT_MAX_LIMIT, "payload-mint-max-amount");
-        assertEq(spell.USDS_MINT_SLOPE(), USDS_MINT_SLOPE, "payload-mint-slope");
-        assertEq(spell.SPARKLEND_USDS_DEPOSIT_MAX(), SPARKLEND_USDS_DEPOSIT_MAX, "payload-deposit-max-amount");
-        assertEq(spell.SPARKLEND_USDS_DEPOSIT_SLOPE(), SPARKLEND_USDS_DEPOSIT_SLOPE, "payload-deposit-slope");
     }
 
     function test_ETHEREUM_authorizePasConfigurator() public {
