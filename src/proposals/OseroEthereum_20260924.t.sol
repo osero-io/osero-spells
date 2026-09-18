@@ -12,7 +12,8 @@ import {
     IAllocatorVaultLike,
     IOseroPauControllerLike,
     IRateLimitsLike,
-    ISpellLike
+    ISpellLike,
+    IVatLike
 } from "../test-harness/OseroTestBase.sol";
 import {CommonPauSpellTests, ExpectedIntegration} from "../test-harness/CommonPauSpellTests.sol";
 
@@ -40,11 +41,14 @@ interface IPasBeamStateLike {
 }
 
 contract OseroEthereum_20260924_Test is CommonPauSpellTests {
-    // September 3, 2026: the pre-state readback block from the technical-scope forum post.
-    uint256 internal constant MAINNET_FORK_BLOCK = 25_897_166;
+    // The spell was deployed at block 25,999,335; fork there so the deployed payload exists on the
+    // fork. The PAS pre-state asserted below is unchanged since the forum readbacks at block 25,897,166.
+    uint256 internal constant MAINNET_FORK_BLOCK = 25_999_335;
 
-    // Set once the September 24 payload is deployed.
-    address internal constant DEPLOYED_PAYLOAD = address(0);
+    // The on-chain 2026-09-24 payload; all tests, including the bytecode match, run against it.
+    // Deployment tx: 0x65f1820230bf5bfeb6ffc405bf60af90126fbd4b93f393bd6a5e43c717fa4336
+    // Codehash: 0x0c01396cee9cf147f0e4e5a715bf14326a81cd0e11c31d96c963d47bba52f4d8
+    address internal constant DEPLOYED_PAYLOAD = 0xA061628c7f7bD95f571fd41f645746cC0d22f812;
 
     // Sky PAS addresses from the chainlog, independently confirmed in the technical-scope forum post:
     // https://forum.skyeco.com/t/september-24-2026-proposed-changes-to-osero-for-upcoming-spell/28224
@@ -582,9 +586,15 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
     function test_ETHEREUM_usdsMintStillSubjectToDebtCeiling() public {
         _executeSpellViaStarGuard(payload);
 
-        // At the forum readback block, existing debt consumes all of the allocator's debt ceiling.
+        // Mint one wei more than the allocator's remaining debt-ceiling headroom at the fork block,
+        // staying under the new rate limit so the Vat ceiling is what rejects the mint.
+        (uint256 art, uint256 rate,, uint256 line,) = IVatLike(MCD_VAT).ilks(OSERO_ILK);
+        uint256 headroom = (line - art * rate) / RAY;
+        uint256 mintAmount = headroom + 1;
+        assertLt(mintAmount, USDS_MINT_MAX_LIMIT, "ceiling-headroom-exceeds-rate-limit");
+
         _expectCallAsOseroActorRevert(
-            bytes("Vat/ceiling-exceeded"), abi.encodeCall(IOseroPauControllerLike.usds_mint, (OPERATIONAL_TEST_AMOUNT))
+            bytes("Vat/ceiling-exceeded"), abi.encodeCall(IOseroPauControllerLike.usds_mint, (mintAmount))
         );
         assertEq(
             rateLimits.getCurrentRateLimit(USDS_MINT_RATE_LIMIT_KEY), USDS_MINT_MAX_LIMIT, "failed-mint-consumed-limit"
@@ -592,9 +602,10 @@ contract OseroEthereum_20260924_Test is CommonPauSpellTests {
     }
 
     function _repayAllocatorDebtForOperationalTest() internal {
-        // The allocator has no debt-ceiling headroom at this block. Fund a repayment using the
-        // existing unlimited burn path so the operational tests can mint/deposit above the old 5M
-        // rate limit. This is test funding, not a coordinated Sky Core action or a debt-ceiling change.
+        // Free up debt-ceiling headroom independent of the fork block's Vat state by funding a
+        // repayment through the existing unlimited burn path, so the operational tests can
+        // mint/deposit above the old 5M rate limit. This is test funding, not a coordinated Sky Core
+        // action or a debt-ceiling change.
         deal(USDS, OSERO_ALM_PROXY, usds.balanceOf(OSERO_ALM_PROXY) + OPERATIONAL_TEST_AMOUNT);
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_burn, (OPERATIONAL_TEST_AMOUNT)));
     }
