@@ -18,25 +18,25 @@ interface IControllerLike {
 /// @custom:forum TBD (https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/<post-id>)
 contract OseroEthereum_20261008 is BaseSpell {
     // Contract: USDC / Source: https://chainlog.skyeco.com/ (key: USDC)
-    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
     // Contract: Osero x Gauntlet USDC Prime Vault (Morpho Vault V2, ogusdcp) / Source: technical-scope forum post (TBD)
-    address public constant OGUSDCP_VAULT = 0x802148D518A6De2aF866f9A61ffB5e5C39156dB2;
+    address internal constant OGUSDCP_VAULT = 0x802148D518A6De2aF866f9A61ffB5e5C39156dB2;
 
-    bytes32 public constant ERC4626_FACET_INTEGRATION_ID = "ERC4626_FACET";
-    bytes32 public constant PSM_FACET_INTEGRATION_ID = "PSM_FACET";
+    bytes32 internal constant ERC4626_FACET_INTEGRATION_ID = "ERC4626_FACET";
+    bytes32 internal constant PSM_FACET_INTEGRATION_ID = "PSM_FACET";
 
     // Max exchange rate: at most 2 USDC (6 decimals) per 1e18 vault shares; stored as 1e36 * 2e6 / 1e18 = 2e24.
-    uint256 public constant OGUSDCP_MAX_EXCHANGE_RATE_SHARES = 1e18;
-    uint256 public constant OGUSDCP_MAX_EXCHANGE_RATE_ASSETS = 2e6;
+    uint256 internal constant OGUSDCP_MAX_EXCHANGE_RATE_SHARES = 1e18;
+    uint256 internal constant OGUSDCP_MAX_EXCHANGE_RATE_ASSETS = 2e6;
 
     // USDC-denominated (6 decimals) limits.
-    uint256 public constant PSM_USDS_TO_USDC_MAX = 50_000_000e6;
-    uint256 public constant PSM_USDS_TO_USDC_SLOPE = uint256(50_000_000e6) / 1 days;
+    uint256 internal constant PSM_USDS_TO_USDC_MAX = 50_000_000e6;
+    uint256 internal constant PSM_USDS_TO_USDC_SLOPE = uint256(50_000_000e6) / 1 days;
 
     // Zero slope: the deposit capacity only refills through vault withdrawals, never over time.
-    uint256 public constant OGUSDCP_DEPOSIT_MAX = 5_000_000e6;
-    uint256 public constant OGUSDCP_DEPOSIT_SLOPE = 0;
+    uint256 internal constant OGUSDCP_DEPOSIT_MAX = 5_000_000e6;
+    uint256 internal constant OGUSDCP_DEPOSIT_SLOPE = 0;
 
     function execute() external override {
         // [Ethereum] Enable the ERC-4626 and PSM integrations on the Osero PAU controller
@@ -57,8 +57,8 @@ contract OseroEthereum_20261008 is BaseSpell {
 
     function _enableIntegrations() private {
         bytes32[] memory ids = new bytes32[](2);
-        ids[0] = ERC4626_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller
-        ids[1] = PSM_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller
+        ids[0] = ERC4626_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller, AFTER: wired from the beacon config
+        ids[1] = PSM_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller, AFTER: wired from the beacon config
         IControllerLike(OseroEthereum.OSERO_CONTROLLER).updateIntegrations(ids);
     }
 
@@ -66,7 +66,7 @@ contract OseroEthereum_20261008 is BaseSpell {
         IControllerLike(OseroEthereum.OSERO_CONTROLLER).erc4626_setMaxExchangeRate({
             token: OGUSDCP_VAULT,
             shares: OGUSDCP_MAX_EXCHANGE_RATE_SHARES,
-            maxExpectedAssets: OGUSDCP_MAX_EXCHANGE_RATE_ASSETS // BEFORE: 0 (unset)
+            maxExpectedAssets: OGUSDCP_MAX_EXCHANGE_RATE_ASSETS // BEFORE: 0 (unset), AFTER: 2e6 (stored as 2e24)
         });
     }
 
@@ -74,23 +74,23 @@ contract OseroEthereum_20261008 is BaseSpell {
         // Forum Proposed action #3
         RateLimitsHelper.setPsmUsdsToUsdcSwapRateLimit({
             rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
-            maxAmount: PSM_USDS_TO_USDC_MAX, // BEFORE: unset
-            slope: PSM_USDS_TO_USDC_SLOPE // BEFORE: unset
+            maxAmount: PSM_USDS_TO_USDC_MAX, // BEFORE: unset, AFTER: 50_000_000e6
+            slope: PSM_USDS_TO_USDC_SLOPE // BEFORE: unset, AFTER: uint256(50_000_000e6) / 1 days
         });
 
         // Forum Proposed action #4
-        RateLimitsHelper.setUnlimitedPsmUsdcToUsdsSwapRateLimit(OseroEthereum.OSERO_RATE_LIMITS); // BEFORE: unset
+        RateLimitsHelper.setUnlimitedPsmUsdcToUsdsSwapRateLimit(OseroEthereum.OSERO_RATE_LIMITS); // BEFORE: unset, AFTER: unlimited
 
         // Forum Proposed action #5
         RateLimitsHelper.setErc4626DepositRateLimit({
             rateLimits: OseroEthereum.OSERO_RATE_LIMITS,
             token: OGUSDCP_VAULT,
             asset: USDC,
-            maxAmount: OGUSDCP_DEPOSIT_MAX, // BEFORE: unset
-            slope: OGUSDCP_DEPOSIT_SLOPE // BEFORE: unset
+            maxAmount: OGUSDCP_DEPOSIT_MAX, // BEFORE: unset, AFTER: 5_000_000e6
+            slope: OGUSDCP_DEPOSIT_SLOPE // BEFORE: unset, AFTER: 0
         });
 
         // Forum Proposed action #6
-        RateLimitsHelper.setUnlimitedErc4626WithdrawRateLimit(OseroEthereum.OSERO_RATE_LIMITS, OGUSDCP_VAULT); // BEFORE: unset
+        RateLimitsHelper.setUnlimitedErc4626WithdrawRateLimit(OseroEthereum.OSERO_RATE_LIMITS, OGUSDCP_VAULT); // BEFORE: unset, AFTER: unlimited
     }
 }

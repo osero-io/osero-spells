@@ -23,8 +23,6 @@ import {
 } from "../test-harness/OseroTestBase.sol";
 import {CommonPauSpellTests, ExpectedIntegration} from "../test-harness/CommonPauSpellTests.sol";
 
-import {OseroEthereum_20261008} from "./OseroEthereum_20261008.sol";
-
 interface IVaultV2Like {
     function asset() external view returns (address);
     function decimals() external view returns (uint8);
@@ -55,6 +53,11 @@ interface IVaultV2Like {
     function virtualShares() external view returns (uint256);
     function performanceFee() external view returns (uint256);
     function managementFee() external view returns (uint256);
+}
+
+interface ISafeLike {
+    function getOwners() external view returns (address[] memory);
+    function getThreshold() external view returns (uint256);
 }
 
 interface IMorphoAdapterLike {
@@ -90,14 +93,22 @@ interface IERC4626FacetLike {
 }
 
 contract OseroEthereum_20261008_Test is CommonPauSpellTests {
-    // Technical-scope readback block (September 16, 2026).
-    uint256 internal constant MAINNET_FORK_BLOCK = 25_989_692;
+    // Technical-scope readback block (September 21, 2026).
+    uint256 internal constant MAINNET_FORK_BLOCK = 26_025_265;
+
+    // Set once the October 8 payload is deployed; move MAINNET_FORK_BLOCK to the deployment block too.
     address internal constant DEPLOYED_PAYLOAD = address(0);
 
     address internal constant OGUSDCP_VAULT = 0x802148D518A6De2aF866f9A61ffB5e5C39156dB2;
+    // Vault roles from the technical scope (Pre-deployed contracts #3). Since September 17, 2026 the
+    // vault owner is the Osero SubProxy and the curator is a 2-of-2 Safe of Gauntlet and Soter Labs.
+    address internal constant OGUSDCP_CURATOR_MULTISIG = 0x256DaC8fad2788F4182A42cE8F26029F0DEd7cf9;
     address internal constant GAUNTLET_OWNER_CURATOR_MULTISIG = 0x9E33faAE38ff641094fa68c65c2cE600b3410585;
+    address internal constant SOTER_LABS_CO_CURATOR_MULTISIG = 0x037A8456FB92dB66590C0060eE4174cC6812f518;
+    address internal constant GAUNTLET_DEPLOYER = 0xd79766D2FeC43886e995EA415a2Bf406280B2e2C;
     address internal constant OGUSDCP_ALLOCATOR = 0x6939A35d32E9bE623e08aA0bceD96D4baC170bB3;
     address internal constant OGUSDCP_SENTINEL = 0x6a0dC94d80429dd4B03E8838CE8d6BEE725bE39B;
+    address internal constant SOTER_LABS_SENTINEL_MULTISIG = 0xf51A112fB2cB63E3CB3eeB7feA8c7c58625868C7;
     address internal constant MORPHO_ADAPTER = 0x9DD0Ceb7caC214777014d2f664dB3C20f0838D53;
     address internal constant MORPHO_VAULT_V2_FACTORY = 0xA1D94F746dEfa1928926b84fB2596c06926C0405;
     address internal constant MORPHO_ADAPTER_FACTORY = 0x32BB1c0D48D8b1B3363e86eeB9A0300BAd61ccc1;
@@ -190,6 +201,12 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         uint256 sparklendMaxSlippage;
         uint256 litePsmBud;
         uint256 starGuardWard;
+        address vaultOwner;
+        address vaultCurator;
+        bool vaultAllocator;
+        bool vaultCuratorAllocator;
+        bool vaultSentinel;
+        bool vaultSoterLabsSentinel;
     }
 
     constructor() {
@@ -229,24 +246,6 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         );
         assertEq(PSM_USDS_TO_USDC_SLOPE, 578_703_703, "psm-usds-to-usdc-slope-literal");
         assertEq(OGUSDCP_DEPOSIT_SLOPE, 0, "ogusdcp-deposit-slope-literal");
-
-        OseroEthereum_20261008 spell = OseroEthereum_20261008(payload);
-        assertEq(spell.USDC(), USDC, "payload-usdc");
-        assertEq(spell.OGUSDCP_VAULT(), OGUSDCP_VAULT, "payload-ogusdcp-vault");
-        assertEq(spell.ERC4626_FACET_INTEGRATION_ID(), ERC4626_FACET_INTEGRATION_ID, "payload-erc4626-id");
-        assertEq(spell.PSM_FACET_INTEGRATION_ID(), PSM_FACET_INTEGRATION_ID, "payload-psm-id");
-        assertEq(spell.OGUSDCP_MAX_EXCHANGE_RATE_SHARES(), 1e18, "payload-max-exchange-rate-shares");
-        assertEq(spell.OGUSDCP_MAX_EXCHANGE_RATE_ASSETS(), 2e6, "payload-max-exchange-rate-assets");
-        assertEq(spell.PSM_USDS_TO_USDC_MAX(), PSM_USDS_TO_USDC_MAX, "payload-psm-max");
-        assertEq(spell.PSM_USDS_TO_USDC_SLOPE(), PSM_USDS_TO_USDC_SLOPE, "payload-psm-slope");
-        assertEq(spell.OGUSDCP_DEPOSIT_MAX(), OGUSDCP_DEPOSIT_MAX, "payload-ogusdcp-deposit-max");
-        assertEq(spell.OGUSDCP_DEPOSIT_SLOPE(), OGUSDCP_DEPOSIT_SLOPE, "payload-ogusdcp-deposit-slope");
-        assertEq(
-            EXCHANGE_RATE_PRECISION * spell.OGUSDCP_MAX_EXCHANGE_RATE_ASSETS()
-                / spell.OGUSDCP_MAX_EXCHANGE_RATE_SHARES(),
-            OGUSDCP_MAX_EXCHANGE_RATE,
-            "payload-max-exchange-rate-encoded"
-        );
     }
 
     function test_ETHEREUM_pauPreconfigurationForVaultOnboarding() public view {
@@ -354,7 +353,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         _assertUnlimitedRateLimit(OGUSDCP_WITHDRAW_RATE_LIMIT_KEY, "ogusdcp-withdraw");
     }
 
-    function test_ETHEREUM_existingRateLimitsPermissionsAndLaunchConfigurationUnchanged() public {
+    function test_ETHEREUM_existingRateLimitsPermissionsVaultRolesAndLaunchConfigurationUnchanged() public {
         ExistingRateLimitsSnapshot memory limitsBefore = _snapshotExistingRateLimits();
         LaunchConfigurationSnapshot memory launchBefore = _snapshotLaunchConfiguration();
 
@@ -584,10 +583,11 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         );
     }
 
-    function test_ETHEREUM_psmAndOgusdcpRateLimitsRecoverOverTime() public {
+    function test_ETHEREUM_psmRateLimitRecoversOverTimeAndOgusdcpDepositDoesNot() public {
         _executeSpellViaStarGuard(payload);
 
-        // Test funding bypasses the mint limit, which only has about 254k capacity at the fork block.
+        // Fund the swap directly so the test does not depend on the fork block's USDS mint capacity
+        // or allocator debt-ceiling headroom.
         deal(USDS, OSERO_ALM_PROXY, usds.balanceOf(OSERO_ALM_PROXY) + OPERATIONAL_TEST_USDS_AMOUNT);
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.psm_swapUSDSToUSDC, (OPERATIONAL_TEST_USDC_AMOUNT)));
         uint256 minSharesOut = IVaultV2Like(OGUSDCP_VAULT).previewDeposit(OPERATIONAL_TEST_USDC_AMOUNT) * 999 / 1000;
@@ -627,7 +627,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(
             rateLimits.getCurrentRateLimit(OGUSDCP_DEPOSIT_RATE_LIMIT_KEY),
             OGUSDCP_DEPOSIT_MAX - OPERATIONAL_TEST_USDC_AMOUNT,
-            "ogusdcp-limit-recovered-with-zero-slope"
+            "ogusdcp-limit-recovered-despite-zero-slope"
         );
 
         vm.warp(block.timestamp + 1 days);
@@ -639,7 +639,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(
             rateLimits.getCurrentRateLimit(OGUSDCP_DEPOSIT_RATE_LIMIT_KEY),
             OGUSDCP_DEPOSIT_MAX - OPERATIONAL_TEST_USDC_AMOUNT,
-            "ogusdcp-limit-recovered-with-zero-slope-after-day"
+            "ogusdcp-limit-recovered-despite-zero-slope-after-day"
         );
         assertEq(
             rateLimits.getCurrentRateLimit(PSM_USDC_TO_USDS_RATE_LIMIT_KEY),
@@ -656,9 +656,10 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
     function test_ETHEREUM_ogusdcpDepositRejectsExchangeRateAboveCeiling() public {
         _executeSpellViaStarGuard(payload);
 
-        deal(USDC, OGUSDCP_VAULT, usdc.balanceOf(OGUSDCP_VAULT) + 10e6);
-        // VaultV2 caps accrual at maxRate (about 100%/year linear), so the share price exceeds the
-        // 2 USDC ceiling only after about one year even with a donation.
+        // Donate twice the vault's assets so the donation alone would more than double the share price,
+        // independent of the vault's size at the fork block. VaultV2 caps accrual at maxRate (about
+        // 100%/year linear), so the share price exceeds the 2 USDC ceiling only after about one year.
+        deal(USDC, OGUSDCP_VAULT, usdc.balanceOf(OGUSDCP_VAULT) + 2 * IVaultV2Like(OGUSDCP_VAULT).totalAssets());
         vm.warp(block.timestamp + 366 days);
         assertGt(IVaultV2Like(OGUSDCP_VAULT).convertToAssets(1e18), 2e6, "ogusdcp-exchange-rate-not-above-ceiling");
 
@@ -720,13 +721,27 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(vault.decimals(), 18, "ogusdcp-decimals");
         assertEq(vault.name(), "Osero x Gauntlet USDC Prime", "ogusdcp-name");
         assertEq(vault.symbol(), "ogusdcp", "ogusdcp-symbol");
-        assertEq(vault.totalAssets(), 1_000_048, "ogusdcp-total-assets");
-        assertEq(vault.totalSupply(), 1_000_001e12, "ogusdcp-total-supply");
-        assertEq(vault.convertToAssets(1e18), 1_000_046, "ogusdcp-convert-to-assets");
-        assertEq(vault.owner(), GAUNTLET_OWNER_CURATOR_MULTISIG, "ogusdcp-owner");
-        assertEq(vault.curator(), GAUNTLET_OWNER_CURATOR_MULTISIG, "ogusdcp-curator");
+        // Balances accrue over time, so assert properties instead of fork-block-specific values: the
+        // vault is seeded and its share price sits between 1 USDC and the 2 USDC max exchange rate.
+        assertGt(vault.totalSupply(), 0, "ogusdcp-not-seeded");
+        assertGe(vault.convertToAssets(1e18), 1e6, "ogusdcp-share-price-below-one");
+        assertLt(vault.convertToAssets(1e18), 2e6, "ogusdcp-share-price-above-max-exchange-rate");
+        assertEq(vault.owner(), OSERO_PROXY, "ogusdcp-owner");
+        assertEq(vault.curator(), OGUSDCP_CURATOR_MULTISIG, "ogusdcp-curator");
+        assertEq(ISafeLike(OGUSDCP_CURATOR_MULTISIG).getThreshold(), 2, "ogusdcp-curator-threshold");
+        address[] memory curatorSigners = ISafeLike(OGUSDCP_CURATOR_MULTISIG).getOwners();
+        assertEq(curatorSigners.length, 2, "ogusdcp-curator-signer-count");
+        assertEq(curatorSigners[0], GAUNTLET_OWNER_CURATOR_MULTISIG, "ogusdcp-curator-gauntlet-signer");
+        assertEq(curatorSigners[1], SOTER_LABS_CO_CURATOR_MULTISIG, "ogusdcp-curator-soter-labs-signer");
         assertTrue(vault.isAllocator(OGUSDCP_ALLOCATOR), "ogusdcp-allocator-not-authorized");
         assertTrue(vault.isSentinel(OGUSDCP_SENTINEL), "ogusdcp-sentinel-not-authorized");
+        assertTrue(vault.isSentinel(SOTER_LABS_SENTINEL_MULTISIG), "ogusdcp-soter-labs-sentinel-not-authorized");
+        // The curator multisig's pending setIsAllocator submission may execute before the spell, so it is
+        // not asserted here; the spell-execution snapshot covers it.
+        assertFalse(vault.isAllocator(OSERO_PROXY), "ogusdcp-subproxy-is-allocator");
+        assertFalse(vault.isAllocator(GAUNTLET_OWNER_CURATOR_MULTISIG), "ogusdcp-gauntlet-multisig-is-allocator");
+        assertFalse(vault.isAllocator(GAUNTLET_DEPLOYER), "ogusdcp-deployer-is-allocator");
+        assertFalse(vault.isSentinel(GAUNTLET_DEPLOYER), "ogusdcp-deployer-is-sentinel");
         assertEq(vault.liquidityAdapter(), MORPHO_ADAPTER, "ogusdcp-liquidity-adapter");
         assertEq(vault.adaptersLength(), 1, "ogusdcp-adapter-count");
         assertEq(vault.adapters(0), MORPHO_ADAPTER, "ogusdcp-adapter-zero");
@@ -890,6 +905,14 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         snapshot.sparklendMaxSlippage = controller.aave_getMaxSlippage(SparkLend.USDS_SPTOKEN);
         snapshot.litePsmBud = ILitePsmLike(MCD_LITE_PSM_USDC_A).bud(OSERO_ALM_PROXY);
         snapshot.starGuardWard = ISubProxyLike(OSERO_PROXY).wards(OSERO_STAR_GUARD);
+
+        IVaultV2Like vault = IVaultV2Like(OGUSDCP_VAULT);
+        snapshot.vaultOwner = vault.owner();
+        snapshot.vaultCurator = vault.curator();
+        snapshot.vaultAllocator = vault.isAllocator(OGUSDCP_ALLOCATOR);
+        snapshot.vaultCuratorAllocator = vault.isAllocator(OGUSDCP_CURATOR_MULTISIG);
+        snapshot.vaultSentinel = vault.isSentinel(OGUSDCP_SENTINEL);
+        snapshot.vaultSoterLabsSentinel = vault.isSentinel(SOTER_LABS_SENTINEL_MULTISIG);
     }
 
     function _assertExistingRateLimitsUnchanged(ExistingRateLimitsSnapshot memory before_) internal view {
@@ -937,6 +960,12 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(after_.sparklendMaxSlippage, before_.sparklendMaxSlippage, "sparklend-max-slippage-changed");
         assertEq(after_.litePsmBud, before_.litePsmBud, "lite-psm-bud-changed");
         assertEq(after_.starGuardWard, before_.starGuardWard, "star-guard-ward-changed");
+        assertEq(after_.vaultOwner, before_.vaultOwner, "vault-owner-changed");
+        assertEq(after_.vaultCurator, before_.vaultCurator, "vault-curator-changed");
+        assertEq(after_.vaultAllocator, before_.vaultAllocator, "vault-allocator-changed");
+        assertEq(after_.vaultCuratorAllocator, before_.vaultCuratorAllocator, "vault-curator-allocator-changed");
+        assertEq(after_.vaultSentinel, before_.vaultSentinel, "vault-sentinel-changed");
+        assertEq(after_.vaultSoterLabsSentinel, before_.vaultSoterLabsSentinel, "vault-soter-labs-sentinel-changed");
     }
 
     /// @dev Config for the inherited pre-spell integration test; the fork has only the launch facets wired.
