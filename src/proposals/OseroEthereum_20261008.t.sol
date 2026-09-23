@@ -132,10 +132,10 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         keccak256(abi.encode(keccak256("LIMIT_AAVE_WITHDRAW"), SparkLend.POOL, SparkLend.USDS_SPTOKEN));
 
     uint256 internal constant OGUSDCP_MAX_EXCHANGE_RATE = 2e24;
-    uint256 internal constant PSM_USDS_TO_USDC_MAX = 5_000_000e6;
-    uint256 internal constant PSM_USDS_TO_USDC_SLOPE = uint256(5_000_000e6) / 1 days;
+    uint256 internal constant PSM_USDS_TO_USDC_MAX = 50_000_000e6;
+    uint256 internal constant PSM_USDS_TO_USDC_SLOPE = uint256(50_000_000e6) / 1 days;
     uint256 internal constant OGUSDCP_DEPOSIT_MAX = 5_000_000e6;
-    uint256 internal constant OGUSDCP_DEPOSIT_SLOPE = uint256(5_000_000e6) / 1 days;
+    uint256 internal constant OGUSDCP_DEPOSIT_SLOPE = 0;
     uint256 internal constant ROUND_TRIP_USDS_AMOUNT = 1_000e18;
     uint256 internal constant ROUND_TRIP_USDC_AMOUNT = 1_000e6;
     uint256 internal constant OPERATIONAL_TEST_USDS_AMOUNT = 1_000_000e18;
@@ -227,8 +227,8 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
             OGUSDCP_WITHDRAW_RATE_LIMIT_KEY,
             "ogusdcp-withdraw-facet-key"
         );
-        assertEq(PSM_USDS_TO_USDC_SLOPE, 57_870_370, "psm-usds-to-usdc-slope-literal");
-        assertEq(OGUSDCP_DEPOSIT_SLOPE, 57_870_370, "ogusdcp-deposit-slope-literal");
+        assertEq(PSM_USDS_TO_USDC_SLOPE, 578_703_703, "psm-usds-to-usdc-slope-literal");
+        assertEq(OGUSDCP_DEPOSIT_SLOPE, 0, "ogusdcp-deposit-slope-literal");
 
         OseroEthereum_20261008 spell = OseroEthereum_20261008(payload);
         assertEq(spell.USDC(), USDC, "payload-usdc");
@@ -626,8 +626,8 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         );
         assertEq(
             rateLimits.getCurrentRateLimit(OGUSDCP_DEPOSIT_RATE_LIMIT_KEY),
-            OGUSDCP_DEPOSIT_MAX - OPERATIONAL_TEST_USDC_AMOUNT + OGUSDCP_DEPOSIT_SLOPE * PARTIAL_RECOVERY_TIME,
-            "ogusdcp-limit-not-recovering"
+            OGUSDCP_DEPOSIT_MAX - OPERATIONAL_TEST_USDC_AMOUNT,
+            "ogusdcp-limit-recovered-with-zero-slope"
         );
 
         vm.warp(block.timestamp + 1 days);
@@ -638,8 +638,8 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         );
         assertEq(
             rateLimits.getCurrentRateLimit(OGUSDCP_DEPOSIT_RATE_LIMIT_KEY),
-            OGUSDCP_DEPOSIT_MAX,
-            "ogusdcp-limit-not-capped"
+            OGUSDCP_DEPOSIT_MAX - OPERATIONAL_TEST_USDC_AMOUNT,
+            "ogusdcp-limit-recovered-with-zero-slope-after-day"
         );
         assertEq(
             rateLimits.getCurrentRateLimit(PSM_USDC_TO_USDS_RATE_LIMIT_KEY),

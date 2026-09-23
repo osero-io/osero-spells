@@ -31,11 +31,12 @@ contract OseroEthereum_20261008 is BaseSpell {
     uint256 public constant OGUSDCP_MAX_EXCHANGE_RATE_ASSETS = 2e6;
 
     // USDC-denominated (6 decimals) limits.
-    uint256 public constant PSM_USDS_TO_USDC_MAX = 5_000_000e6;
-    uint256 public constant PSM_USDS_TO_USDC_SLOPE = uint256(5_000_000e6) / 1 days;
+    uint256 public constant PSM_USDS_TO_USDC_MAX = 50_000_000e6;
+    uint256 public constant PSM_USDS_TO_USDC_SLOPE = uint256(50_000_000e6) / 1 days;
 
+    // Zero slope: the deposit capacity only refills through vault withdrawals, never over time.
     uint256 public constant OGUSDCP_DEPOSIT_MAX = 5_000_000e6;
-    uint256 public constant OGUSDCP_DEPOSIT_SLOPE = uint256(5_000_000e6) / 1 days;
+    uint256 public constant OGUSDCP_DEPOSIT_SLOPE = 0;
 
     function execute() external override {
         // [Ethereum] Enable the ERC-4626 and PSM integrations on the Osero PAU controller
