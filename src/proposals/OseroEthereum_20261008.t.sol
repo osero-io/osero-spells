@@ -17,6 +17,7 @@ import {
     IRateLimitsLike,
     ISpellLike,
     ISubProxyLike,
+    IVatLike,
     PauConfig,
     PauDispatch,
     PauWire
@@ -33,6 +34,7 @@ interface IVaultV2Like {
     function totalSupply() external view returns (uint256);
     function previewDeposit(uint256 assets) external view returns (uint256);
     function previewRedeem(uint256 shares) external view returns (uint256);
+    function previewWithdraw(uint256 assets) external view returns (uint256);
     function convertToAssets(uint256 shares) external view returns (uint256);
     function owner() external view returns (address);
     function curator() external view returns (address);
@@ -103,7 +105,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
     // Vault roles from the technical scope (Pre-deployed contracts #3). Since September 17, 2026 the
     // vault owner is the Osero SubProxy and the curator is a 2-of-2 Safe of Gauntlet and Soter Labs.
     address internal constant OGUSDCP_CURATOR_MULTISIG = 0x256DaC8fad2788F4182A42cE8F26029F0DEd7cf9;
-    address internal constant GAUNTLET_OWNER_CURATOR_MULTISIG = 0x9E33faAE38ff641094fa68c65c2cE600b3410585;
+    address internal constant GAUNTLET_CO_CURATOR_MULTISIG = 0x9E33faAE38ff641094fa68c65c2cE600b3410585;
     address internal constant SOTER_LABS_CO_CURATOR_MULTISIG = 0x037A8456FB92dB66590C0060eE4174cC6812f518;
     address internal constant GAUNTLET_DEPLOYER = 0xd79766D2FeC43886e995EA415a2Bf406280B2e2C;
     address internal constant OGUSDCP_ALLOCATOR = 0x6939A35d32E9bE623e08aA0bceD96D4baC170bB3;
@@ -463,8 +465,10 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         uint256 proxyUsdcStart = usdc.balanceOf(OSERO_ALM_PROXY);
         uint256 proxySharesStart = ogusdcp.balanceOf(OSERO_ALM_PROXY);
         uint256 mintBefore = rateLimits.getCurrentRateLimit(USDS_MINT_RATE_LIMIT_KEY);
+        uint256 debtStart = _allocatorDebt();
 
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_mint, (ROUND_TRIP_USDS_AMOUNT)));
+        assertEq(_allocatorDebt(), debtStart + ROUND_TRIP_USDS_AMOUNT, "allocator-debt-not-increased-by-mint");
         vm.expectEmit(OSERO_CONTROLLER);
         emit PSMSwapUSDSToUSDC(ROUND_TRIP_USDC_AMOUNT);
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.psm_swapUSDSToUSDC, (ROUND_TRIP_USDC_AMOUNT)));
@@ -539,8 +543,14 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
             "psm-usdc-to-usds-limit-not-unlimited"
         );
 
+        uint256 debtBeforeBurn = _allocatorDebt();
+        assertEq(debtBeforeBurn, debtStart + ROUND_TRIP_USDS_AMOUNT, "allocator-debt-changed-before-burn");
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_burn, (assets * 1e12)));
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "proxy-usds-not-burned");
+        assertEq(_allocatorDebt(), debtBeforeBurn - assets * 1e12, "allocator-debt-not-decreased-by-burn");
+        // Reconcile allocator debt with USDS minted and burned: any residual debt is exactly the
+        // round-trip shortfall (USDS minted minus USDS recovered and burned).
+        assertEq(_allocatorDebt() - debtStart, ROUND_TRIP_USDS_AMOUNT - assets * 1e12, "allocator-debt-not-reconciled");
         assertEq(
             rateLimits.getCurrentRateLimit(USDS_MINT_RATE_LIMIT_KEY),
             mintBefore - ROUND_TRIP_USDS_AMOUNT + assets * 1e12,
@@ -552,6 +562,64 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(usdc.allowance(OSERO_ALM_PROXY, MCD_LITE_PSM_USDC_A), 0, "lite-psm-usdc-approval-not-cleared");
         assertEq(dai.allowance(OSERO_ALM_PROXY, DAI_USDS), 0, "dai-usds-dai-approval-not-cleared");
         assertEq(usdc.allowance(OSERO_ALM_PROXY, OGUSDCP_VAULT), 0, "ogusdcp-usdc-final-approval-not-cleared");
+    }
+
+    function test_ETHEREUM_ogusdcpWithdrawOperationalThroughAdministeredAgent() public {
+        _executeSpellViaStarGuard(payload);
+
+        IVaultV2Like vault = IVaultV2Like(OGUSDCP_VAULT);
+        deal(USDC, OSERO_ALM_PROXY, usdc.balanceOf(OSERO_ALM_PROXY) + ROUND_TRIP_USDC_AMOUNT);
+        uint256 proxyUsdcStart = usdc.balanceOf(OSERO_ALM_PROXY);
+        uint256 proxySharesStart = ogusdcp.balanceOf(OSERO_ALM_PROXY);
+
+        uint256 minSharesOut = vault.previewDeposit(ROUND_TRIP_USDC_AMOUNT) * 999 / 1000;
+        uint256 shares = abi.decode(
+            _callAsOseroActor(
+                abi.encodeCall(
+                    IOseroPauControllerLike.erc4626_deposit, (OGUSDCP_VAULT, ROUND_TRIP_USDC_AMOUNT, minSharesOut)
+                )
+            ),
+            (uint256)
+        );
+        assertEq(usdc.balanceOf(OSERO_ALM_PROXY), proxyUsdcStart - ROUND_TRIP_USDC_AMOUNT, "proxy-usdc-not-deposited");
+
+        // Withdraw the full USDC value of the new shares, bounded by the shares just received.
+        uint256 withdrawAmount = vault.previewRedeem(shares);
+        assertGe(withdrawAmount, 999e6, "ogusdcp-withdrawable-below-minimum");
+        uint256 expectedSharesBurned = vault.previewWithdraw(withdrawAmount);
+        assertLe(expectedSharesBurned, shares, "ogusdcp-withdraw-burns-more-than-deposited");
+        uint256 totalSupplyBefore = vault.totalSupply();
+
+        uint256 sharesBurned = abi.decode(
+            _callAsOseroActor(
+                abi.encodeCall(IOseroPauControllerLike.erc4626_withdraw, (OGUSDCP_VAULT, withdrawAmount, shares))
+            ),
+            (uint256)
+        );
+
+        assertEq(sharesBurned, expectedSharesBurned, "ogusdcp-shares-burned");
+        assertEq(vault.totalSupply(), totalSupplyBefore - sharesBurned, "ogusdcp-total-supply-not-burned");
+        assertEq(
+            ogusdcp.balanceOf(OSERO_ALM_PROXY),
+            proxySharesStart + shares - sharesBurned,
+            "proxy-shares-not-burned-by-withdraw"
+        );
+        assertEq(
+            usdc.balanceOf(OSERO_ALM_PROXY),
+            proxyUsdcStart - ROUND_TRIP_USDC_AMOUNT + withdrawAmount,
+            "proxy-usdc-not-received-by-withdraw"
+        );
+        assertEq(
+            rateLimits.getCurrentRateLimit(OGUSDCP_DEPOSIT_RATE_LIMIT_KEY),
+            OGUSDCP_DEPOSIT_MAX - ROUND_TRIP_USDC_AMOUNT + withdrawAmount,
+            "ogusdcp-deposit-limit-not-refilled-by-withdraw"
+        );
+        assertEq(
+            rateLimits.getCurrentRateLimit(OGUSDCP_WITHDRAW_RATE_LIMIT_KEY),
+            type(uint256).max,
+            "ogusdcp-withdraw-limit-not-unlimited"
+        );
+        assertEq(usdc.allowance(OSERO_ALM_PROXY, OGUSDCP_VAULT), 0, "ogusdcp-usdc-approval-not-cleared");
     }
 
     function test_ETHEREUM_psmUsdsToUsdcSwapRateLimitRejectsOversizedSwap() public {
@@ -731,7 +799,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(ISafeLike(OGUSDCP_CURATOR_MULTISIG).getThreshold(), 2, "ogusdcp-curator-threshold");
         address[] memory curatorSigners = ISafeLike(OGUSDCP_CURATOR_MULTISIG).getOwners();
         assertEq(curatorSigners.length, 2, "ogusdcp-curator-signer-count");
-        assertEq(curatorSigners[0], GAUNTLET_OWNER_CURATOR_MULTISIG, "ogusdcp-curator-gauntlet-signer");
+        assertEq(curatorSigners[0], GAUNTLET_CO_CURATOR_MULTISIG, "ogusdcp-curator-gauntlet-signer");
         assertEq(curatorSigners[1], SOTER_LABS_CO_CURATOR_MULTISIG, "ogusdcp-curator-soter-labs-signer");
         assertTrue(vault.isAllocator(OGUSDCP_ALLOCATOR), "ogusdcp-allocator-not-authorized");
         assertTrue(vault.isSentinel(OGUSDCP_SENTINEL), "ogusdcp-sentinel-not-authorized");
@@ -739,7 +807,7 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         // The curator multisig's pending setIsAllocator submission may execute before the spell, so it is
         // not asserted here; the spell-execution snapshot covers it.
         assertFalse(vault.isAllocator(OSERO_PROXY), "ogusdcp-subproxy-is-allocator");
-        assertFalse(vault.isAllocator(GAUNTLET_OWNER_CURATOR_MULTISIG), "ogusdcp-gauntlet-multisig-is-allocator");
+        assertFalse(vault.isAllocator(GAUNTLET_CO_CURATOR_MULTISIG), "ogusdcp-gauntlet-multisig-is-allocator");
         assertFalse(vault.isAllocator(GAUNTLET_DEPLOYER), "ogusdcp-deployer-is-allocator");
         assertFalse(vault.isSentinel(GAUNTLET_DEPLOYER), "ogusdcp-deployer-is-sentinel");
         assertEq(vault.liquidityAdapter(), MORPHO_ADAPTER, "ogusdcp-liquidity-adapter");
@@ -763,6 +831,13 @@ contract OseroEthereum_20261008_Test is CommonPauSpellTests {
         assertEq(vault.virtualShares(), 1e12, "ogusdcp-virtual-shares");
         assertEq(vault.performanceFee(), 0, "ogusdcp-performance-fee");
         assertEq(vault.managementFee(), 0, "ogusdcp-management-fee");
+    }
+
+    /// @dev ALLOCATOR-PRYSM-A debt (18 decimals) drawn by the Osero allocator vault urn.
+    function _allocatorDebt() internal view returns (uint256) {
+        (, uint256 art) = IVatLike(MCD_VAT).urns(OSERO_ILK, OSERO_ALLOCATOR_VAULT);
+        (, uint256 rate,,,) = IVatLike(MCD_VAT).ilks(OSERO_ILK);
+        return art * rate / RAY;
     }
 
     function _assertNewRateLimitsUnset() internal view {
