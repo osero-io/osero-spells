@@ -15,12 +15,12 @@ interface IControllerLike {
 /// @notice Onboards the Osero x Gauntlet USDC Prime Vault (Morpho Vault V2): enables the ERC-4626 and PSM
 ///         facets on the Osero PAU controller, sets the vault max exchange rate to 2 USDC per share, and adds
 ///         the PSM USDS<>USDC swap and vault deposit/withdraw rate limits.
-/// @custom:forum TBD (https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/<post-id>)
+/// @custom:forum https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/28253
 contract OseroEthereum_20261008 is BaseSpell {
     // Contract: USDC / Source: https://chainlog.skyeco.com/ (key: USDC)
     address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
-    // Contract: Osero x Gauntlet USDC Prime Vault (Morpho Vault V2, ogusdcp) / Source: technical-scope forum post (TBD)
+    // Contract: Osero x Gauntlet USDC Prime Vault (Morpho Vault V2, ogusdcp) / Source: https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/28253
     address internal constant OGUSDCP_VAULT = 0x802148D518A6De2aF866f9A61ffB5e5C39156dB2;
 
     bytes32 internal constant ERC4626_FACET_INTEGRATION_ID = "ERC4626_FACET";
@@ -40,17 +40,17 @@ contract OseroEthereum_20261008 is BaseSpell {
 
     function execute() external override {
         // [Ethereum] Enable the ERC-4626 and PSM integrations on the Osero PAU controller
-        //   Forum : TBD
+        //   Forum : https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/28253
         //   Proposed action #1
         _enableIntegrations();
 
         // [Ethereum] Set the Osero x Gauntlet USDC Prime Vault max exchange rate
-        //   Forum : TBD
+        //   Forum : https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/28253
         //   Proposed action #2
         _setOgusdcpMaxExchangeRate();
 
         // [Ethereum] Add the PSM USDS<>USDC swap and Osero x Gauntlet USDC Prime Vault deposit/withdraw rate limits on the PAU rate limits
-        //   Forum : TBD
+        //   Forum : https://forum.skyeco.com/t/october-8-2026-proposed-changes-to-osero-for-upcoming-spell/28253
         //   Proposed actions #3 to #6
         _setupRateLimits();
     }
