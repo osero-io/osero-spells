@@ -22,6 +22,16 @@ interface IAaveFacetLike {
     function getWithdrawRateLimitKey(address aToken, address pool) external pure returns (bytes32);
 }
 
+interface IPSMFacetLike {
+    function usdsToUSDCSwapRateLimitKey() external pure returns (bytes32);
+    function usdcToUSDSSwapRateLimitKey() external pure returns (bytes32);
+}
+
+interface IERC4626FacetLike {
+    function getDepositRateLimitKey(address token, address asset) external pure returns (bytes32);
+    function getWithdrawRateLimitKey(address token) external pure returns (bytes32);
+}
+
 library RateLimitsHelper {
     function setUsdsMintRateLimit(address rateLimits, uint256 maxAmount, uint256 slope) internal {
         IRateLimitsLike(rateLimits)
@@ -52,5 +62,33 @@ library RateLimitsHelper {
             .setUnlimitedRateLimitData(
                 IAaveFacetLike(SkyPau.AAVE_FACET).getWithdrawRateLimitKey(spToken, SparkLend.POOL)
             );
+    }
+
+    function setPsmUsdsToUsdcSwapRateLimit(address rateLimits, uint256 maxAmount, uint256 slope) internal {
+        IRateLimitsLike(rateLimits)
+            .setRateLimitData(IPSMFacetLike(SkyPau.PSM_FACET).usdsToUSDCSwapRateLimitKey(), maxAmount, slope);
+    }
+
+    function setUnlimitedPsmUsdcToUsdsSwapRateLimit(address rateLimits) internal {
+        IRateLimitsLike(rateLimits)
+            .setUnlimitedRateLimitData(IPSMFacetLike(SkyPau.PSM_FACET).usdcToUSDSSwapRateLimitKey());
+    }
+
+    function setErc4626DepositRateLimit(
+        address rateLimits,
+        address token,
+        address asset,
+        uint256 maxAmount,
+        uint256 slope
+    ) internal {
+        IRateLimitsLike(rateLimits)
+            .setRateLimitData(
+                IERC4626FacetLike(SkyPau.ERC4626_FACET).getDepositRateLimitKey(token, asset), maxAmount, slope
+            );
+    }
+
+    function setUnlimitedErc4626WithdrawRateLimit(address rateLimits, address token) internal {
+        IRateLimitsLike(rateLimits)
+            .setUnlimitedRateLimitData(IERC4626FacetLike(SkyPau.ERC4626_FACET).getWithdrawRateLimitKey(token));
     }
 }
