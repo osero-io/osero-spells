@@ -95,11 +95,15 @@ interface IERC4626FacetLike {
 }
 
 contract OseroEthereum_20261008_Test is CommonPauSpellTests {
-    // Technical-scope readback block (September 21, 2026).
-    uint256 internal constant MAINNET_FORK_BLOCK = 26_025_265;
+    // The spell was deployed at block 26,099,691; fork there so the deployed payload exists on the
+    // fork. The pre-state asserted below is unchanged since the technical-scope readbacks at block
+    // 26,025,265 (September 21, 2026).
+    uint256 internal constant MAINNET_FORK_BLOCK = 26_099_691;
 
-    // Set once the October 8 payload is deployed; move MAINNET_FORK_BLOCK to the deployment block too.
-    address internal constant DEPLOYED_PAYLOAD = address(0);
+    // The on-chain 2026-10-08 payload; all tests, including the bytecode match, run against it.
+    // Deployment tx: 0xb16b90202090b20f9d4745216eb3008f632121320440740c2ee2feece83fead3
+    // Codehash: 0xf80be0f506aab4e137a867a1c289f34254e845ecadbb92b33104660c6349a7fd
+    address internal constant DEPLOYED_PAYLOAD = 0x0ABdd6cbb1802Ce980FE4b628a682c70727978D2;
 
     address internal constant OGUSDCP_VAULT = 0x802148D518A6De2aF866f9A61ffB5e5C39156dB2;
     // Vault roles from the technical scope (Pre-deployed contracts #3). Since September 17, 2026 the
