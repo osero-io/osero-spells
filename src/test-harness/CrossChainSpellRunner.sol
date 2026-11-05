@@ -7,7 +7,6 @@ import {Base as OseroBase} from "osero-address-registry/Base.sol";
 
 import {IExecutor} from "spark-gov-relay/src/interfaces/IExecutor.sol";
 
-import {OptimismForwarder} from "xchain-helpers/forwarders/OptimismForwarder.sol";
 import {Bridge} from "xchain-helpers/testing/Bridge.sol";
 import {Domain, DomainHelpers} from "xchain-helpers/testing/Domain.sol";
 import {OptimismBridgeTesting} from "xchain-helpers/testing/bridges/OptimismBridgeTesting.sol";
@@ -24,9 +23,10 @@ interface IOseroPayloadEthereumLike {
 ///      StarGuard, relays the Base `L1CrossDomainMessenger` message to the Osero Receiver on Base, and
 ///      executes the queued actions set on the Osero Executor on Base.
 ///
-///      While the Base payload is not deployed (the Ethereum spell's `PAYLOAD_BASE` is unset), the
-///      relay is simulated: the Osero SubProxy sends the same `Executor.queue` message the spell will
-///      send, for a freshly deployed Base payload, through the same messenger, Receiver and Executor.
+///      While the payloads are not deployed (the Ethereum spell's `PAYLOAD_BASE` is unset), the
+///      Ethereum payload under test is the spell as it will be deployed: the same code with
+///      `PAYLOAD_BASE` set to a freshly deployed Base payload (`_setupBaseRelay`). Every test therefore
+///      runs the spell's own relay; nothing simulates the message.
 abstract contract CrossChainSpellRunner is CommonPauSpellTests {
     using DomainHelpers for StdChains.Chain;
     using DomainHelpers for Domain;
@@ -87,10 +87,33 @@ abstract contract CrossChainSpellRunner is CommonPauSpellTests {
         basePayload = deployedBasePayload_ == address(0) ? _deployBasePayload() : deployedBasePayload_;
     }
 
+    /// @dev Must be called after `_setupPayload` and `_setupBasePayload`. While the Ethereum spell is not
+    ///      deployed and its `PAYLOAD_BASE` is unset, replaces the Ethereum payload under test with the spell
+    ///      as it will be deployed, relaying the Base payload under test. A deployed spell is never replaced.
+    function _setupBaseRelay() internal {
+        if (deployedPayload != address(0) || IOseroPayloadEthereumLike(payload).PAYLOAD_BASE() != address(0)) {
+            return;
+        }
+
+        uint256 activeFork = vm.activeFork();
+        ethereumDomain.selectFork();
+        payload = _deployPayloadWithBasePayload(basePayload);
+        vm.selectFork(activeFork);
+    }
+
     /// @dev Deploys a fresh Base payload on the active fork.
     function _deployBasePayload() internal returns (address) {
         string memory slug = string.concat("OseroBase_", spellId);
         return deployCode(string.concat(slug, ".sol:", slug));
+    }
+
+    /// @dev Deploys, on the active fork, the spell with `PAYLOAD_BASE` set to `basePayload_` in the constructor,
+    ///      as the deployed spell will have it: the test-only `OseroEthereum_<spellId>_WithBasePayload`
+    ///      subclass declared in the spell's test file, which only adds that constructor.
+    ///      `test_ETHEREUM_payloadWithBasePayloadMatchesSpellBytecode` checks its runtime code is the spell's.
+    function _deployPayloadWithBasePayload(address basePayload_) internal returns (address) {
+        string memory slug = string.concat("OseroEthereum_", spellId);
+        return deployCode(string.concat(slug, ".t.sol:", slug, "_WithBasePayload"), abi.encode(basePayload_));
     }
 
     /// @dev Executes the Ethereum spell, relays its message to Base and executes the queued actions set on
@@ -107,23 +130,14 @@ abstract contract CrossChainSpellRunner is CommonPauSpellTests {
         vm.selectFork(activeFork);
     }
 
-    /// @dev Must be called with Ethereum selected, after the Ethereum spell executed. Relays the Base payload
-    ///      queue message to Base and returns the queued actions set id, leaving Base selected.
+    /// @dev Must be called with Ethereum selected, after the Ethereum spell executed. Relays the message the
+    ///      spell sent to Base and returns the queued actions set id, leaving Base selected.
     function _relayBasePayload() internal returns (uint256 actionsSetId) {
-        address relayedPayload = IOseroPayloadEthereumLike(payload).PAYLOAD_BASE();
-
-        if (relayedPayload == address(0)) {
-            // Simulate the spell's relay (OseroPayloadEthereum.execute) for the Base payload under test.
-            vm.prank(OSERO_PROXY);
-            OptimismForwarder.sendMessageL1toL2({
-                l1CrossDomain: OptimismForwarder.L1_CROSS_DOMAIN_BASE,
-                target: BASE_OSERO_RECEIVER,
-                message: _encodeBasePayloadQueue(basePayload),
-                gasLimit: BASE_RELAY_GAS_LIMIT
-            });
-        } else {
-            assertEq(relayedPayload, basePayload, "relayed-base-payload-not-base-payload-under-test");
-        }
+        assertEq(
+            IOseroPayloadEthereumLike(payload).PAYLOAD_BASE(),
+            basePayload,
+            "relayed-base-payload-not-base-payload-under-test"
+        );
 
         baseDomain.selectFork();
         actionsSetId = baseExecutor.actionsSetCount();
@@ -133,8 +147,15 @@ abstract contract CrossChainSpellRunner is CommonPauSpellTests {
         assertEq(baseExecutor.actionsSetCount(), actionsSetId + 1, "base-actions-set-not-queued");
     }
 
+    /// @dev Must be called with Base selected. Asserts the prerequisites of the Base payload that other parties
+    ///      must meet on Base first, so a test executing the Base payload fails with an explicit reason instead
+    ///      of the Executor's revert. Override in the spell test; empty when there are none.
+    function _assertBasePrerequisites() internal view virtual {}
+
     /// @dev Must be called with Base selected. Executes the actions set permissionlessly once executable.
     function _executeBaseActionsSet(uint256 actionsSetId) internal {
+        _assertBasePrerequisites();
+
         uint256 executionTime = baseExecutor.getActionsSetById(actionsSetId).executionTime;
         if (block.timestamp < executionTime) vm.warp(executionTime);
 

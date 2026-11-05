@@ -43,6 +43,17 @@ abstract contract CommonBaseSpellTests is CrossChainSpellRunner {
         _assertRuntimeBytecodeMatches(_deployBasePayload(), deployedBasePayload, "base-payload");
     }
 
+    /// @dev While the payloads are not deployed, the Ethereum payload under test is the spell with `PAYLOAD_BASE`
+    ///      set in a test-only constructor (`_setupBaseRelay`). Deployed with the spell's own `PAYLOAD_BASE`, that
+    ///      contract has exactly the spell's runtime code, so the tests run the code that will be deployed.
+    function test_ETHEREUM_payloadWithBasePayloadMatchesSpellBytecode() public {
+        address spell = _deployPayload();
+        address withBasePayload = _deployPayloadWithBasePayload(IOseroPayloadEthereumLike(spell).PAYLOAD_BASE());
+
+        assertGt(spell.code.length, 0, "spell-not-deployed");
+        assertEq(withBasePayload.code, spell.code, "payload-with-base-payload-runtime-code-not-spell-runtime-code");
+    }
+
     /// @dev Once the Ethereum spell is deployed it must relay the deployed Base payload.
     function test_ETHEREUM_deployedSpellRelaysDeployedBasePayload() public {
         vm.skip(deployedPayload == address(0));
@@ -52,10 +63,11 @@ abstract contract CommonBaseSpellTests is CrossChainSpellRunner {
         assertEq(relayedPayload, deployedBasePayload, "deployed-spell-relays-unexpected-base-payload");
     }
 
-    /// @dev The spell sends exactly one Base message, the Executor queue call for `PAYLOAD_BASE`, once it is
-    ///      set, and none while it is unset.
+    /// @dev The spell sends exactly one Base message: the Executor queue call for the Base payload under test,
+    ///      from the SubProxy to the Osero Receiver on Base, with the relay gas limit. The expected message is
+    ///      rebuilt independently of the spell.
     function test_ETHEREUM_spellRelaysOnlyBasePayloadQueueMessage() public {
-        address relayedPayload = IOseroPayloadEthereumLike(payload).PAYLOAD_BASE();
+        assertEq(IOseroPayloadEthereumLike(payload).PAYLOAD_BASE(), basePayload, "payload-base-not-base-payload");
 
         vm.recordLogs();
         _executeSpellViaStarGuard(payload);
@@ -71,11 +83,11 @@ abstract contract CommonBaseSpellTests is CrossChainSpellRunner {
             (address sender, bytes memory message,, uint256 gasLimit) =
                 abi.decode(logs[i].data, (address, bytes, uint256, uint256));
             assertEq(sender, OSERO_PROXY, "sent-message-sender");
-            assertEq(message, _encodeBasePayloadQueue(relayedPayload), "sent-message-payload-queue");
+            assertEq(message, _encodeBasePayloadQueue(basePayload), "sent-message-payload-queue");
             assertEq(gasLimit, BASE_RELAY_GAS_LIMIT, "sent-message-gas-limit");
         }
 
-        assertEq(sentMessages, relayedPayload == address(0) ? 0 : 1, "sent-message-count");
+        assertEq(sentMessages, 1, "sent-message-count");
     }
 
     function test_BASE_governanceRelayConfiguration() public onBase {
@@ -186,6 +198,7 @@ abstract contract CommonBaseSpellTests is CrossChainSpellRunner {
     function test_BASE_payloadExecutionGasWithinBlockLimit() public {
         _executeSpellViaStarGuard(payload);
         uint256 actionsSetId = _relayBasePayload();
+        _assertBasePrerequisites();
 
         vm.prank(PERMISSIONLESS_EXECUTOR);
         uint256 gasStart = gasleft();

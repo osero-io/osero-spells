@@ -9,6 +9,8 @@ import {SparkLend} from "spark-address-registry/SparkLend.sol";
 
 import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
 
+import {IExecutor} from "spark-gov-relay/src/interfaces/IExecutor.sol";
+
 import {CCTPForwarder} from "xchain-helpers/forwarders/CCTPForwarder.sol";
 import {Bridge} from "xchain-helpers/testing/Bridge.sol";
 import {CCTPV2BridgeTesting} from "xchain-helpers/testing/bridges/CCTPV2BridgeTesting.sol";
@@ -29,6 +31,18 @@ import {
 } from "../test-harness/OseroTestBase.sol";
 import {ExpectedIntegration} from "../test-harness/CommonPauSpellTests.sol";
 import {CommonBaseSpellTests} from "../test-harness/CommonBaseSpellTests.sol";
+
+import {OseroEthereum_20261119} from "./OseroEthereum_20261119.sol";
+
+/// @dev Test-only: `OseroEthereum_20261119` as it will be deployed, with `PAYLOAD_BASE` set in the constructor.
+///      Until the Base payload is deployed, the tests run it with `PAYLOAD_BASE` set to a freshly deployed Base
+///      payload (`CrossChainSpellRunner._setupBaseRelay`); `test_ETHEREUM_payloadWithBasePayloadMatchesSpellBytecode`
+///      checks it has the spell's runtime code.
+contract OseroEthereum_20261119_WithBasePayload is OseroEthereum_20261119 {
+    constructor(address payloadBase) {
+        PAYLOAD_BASE = payloadBase;
+    }
+}
 
 interface ICCTPControllerLike {
     function cctp_VERSION() external view returns (string memory);
@@ -72,7 +86,6 @@ interface IBeaconAdminLike {
     function getConfig(bytes32 id) external view returns (PauConfig memory);
     function hasRole(bytes32 role, address account) external view returns (bool);
     function removeIntegration(bytes32 id) external;
-    function setIntegration(bytes32 id, PauConfig calldata config) external;
 }
 
 interface IEnumerableAccessControlsLike {
@@ -94,6 +107,27 @@ interface IRateLimitsAdminLike {
 
 interface IPASConfiguratorLike {
     function beamState() external view returns (address);
+    function setRateLimit(address rateLimits, bytes32 key, uint256 maxAmount, uint256 slope) external;
+    function callControllerAction(address controller, bytes calldata data) external returns (bytes memory ret);
+}
+
+interface IPASBeamStateLike {
+    function wards(address usr) external view returns (uint256);
+    function stopped() external view returns (bool);
+    function rateLimits(address rateLimits_) external view returns (uint256);
+    function controllers(address controller) external view returns (uint256);
+    function cBeams(address cBeam) external view returns (uint256);
+    function rateLimitsCBeams(address rateLimits_, address cBeam) external view returns (uint256);
+    function controllersCBeams(address controller, address cBeam) external view returns (uint256);
+    function getHop(address rateLimits_) external view returns (uint256);
+    function getMaxChange(address rateLimits_) external view returns (uint256);
+    function addRateLimits(address rateLimits_) external;
+    function addController(address controller) external;
+    function addCBeam(address cBeam) external;
+    function setCBeamForRateLimits(address rateLimits_, address cBeam) external;
+    function setCBeamForController(address controller, address cBeam) external;
+    function addInitRateLimits(bytes32 key, address rateLimits_, uint256 maxAmount, uint256 slope) external;
+    function addInitControllerActions(bytes calldata data, address controller) external returns (bytes32 key);
 }
 
 interface IVaultV2Like {
@@ -141,14 +175,19 @@ interface IMorphoAdapterFactoryLike {
 }
 
 interface ISafeLike {
+    function getModulesPaginated(address start, uint256 pageSize)
+        external
+        view
+        returns (address[] memory modules, address next);
     function getOwners() external view returns (address[] memory);
     function getThreshold() external view returns (uint256);
 }
 
 contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     // Forks at blocks with aligned timestamps (November 5, 2026 15:30 UTC), after the technical-scope
-    // readbacks. The Sky PAU Beacon on Base does not register the ERC-4626 facet yet: the Sky Core spell
-    // registers it (Pre-requirements #1), simulated in setUp.
+    // readbacks. The Sky PAU Beacon on Base does not register the ERC-4626 facet yet: the November 19, 2026
+    // Sky Core spell registers it (Pre-requirements #1). It is not simulated, so every test that executes the
+    // Base payload fails on `_assertBasePrerequisites` until BASE_FORK_BLOCK is moved past the registration.
     uint256 internal constant MAINNET_FORK_BLOCK = 26_349_341;
     uint256 internal constant BASE_FORK_BLOCK = 53_550_442;
 
@@ -175,6 +214,9 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     address internal constant BASE_SPARK_EXECUTOR = 0xF93B7122450A50AF3e5A76E1d546e95Ac1d0F579;
     address internal constant BASE_SOTER_OPERATOR = 0x3dE688267Cf099307aBdd85F64D8efe03D0b2b26;
     address internal constant BASE_SOTER_FREEZER = 0xF61F90907551a8A23f0f8EEE9658Fa53326de603;
+    // Osero Operator Multisig on Base, the cBEAM Sky Core pairs to Osero on the Base PAS (Pre-requirements #5); the
+    // same address and owners as on Ethereum. Source: the technical scope (Pre-deployed contracts #14).
+    address internal constant BASE_OSERO_CBEAM = 0x42D1038017E466b413aa44Ae798E30FB80b2E180;
 
     address internal constant OGUSDCB_VAULT = 0x8c1e205C408b90A0dDDbD53594049a379557c651;
     address internal constant OGUSDCB_CURATOR_MULTISIG = 0x256DaC8fad2788F4182A42cE8F26029F0DEd7cf9;
@@ -250,6 +292,18 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     uint256 internal constant OPERATIONAL_TEST_USDC_AMOUNT = 1_000_000e6;
     uint256 internal constant PARTIAL_RECOVERY_TIME = 20 minutes;
 
+    // --- Base PAS fixture (NOT part of this spell) ---
+    // Sky Core registers Osero on the Base PAS and pairs the Osero Operator Multisig on Base in the November 19,
+    // 2026 Sky Core spell (Pre-requirements #5). The fixture registers the spell's CCTP-to-Ethereum limit as the
+    // BeamState default and `removeIntegrations([ERC4626_FACET])` as a controller action, then lowers the limit.
+    uint256 internal constant PAS_FIXTURE_LOWERED_CCTP_MAX = 5_000_000e6;
+    uint256 internal constant PAS_FIXTURE_LOWERED_CCTP_SLOPE = uint256(25_000_000e6) / 1 days;
+
+    // Safe storage slot of the transaction guard: keccak256("guard_manager.guard.address").
+    bytes32 internal constant SAFE_GUARD_STORAGE_SLOT =
+        0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
+    address internal constant SAFE_SENTINEL_MODULES = address(0x1);
+
     bytes32 internal constant INTEGRATION_SET_TOPIC = keccak256("IntegrationSet(bytes32,(address,(bytes4,bytes4)[]))");
     bytes32 internal constant INTEGRATION_REMOVED_TOPIC = keccak256("IntegrationRemoved(bytes32)");
     bytes32 internal constant CCTP_DOMAIN_PARAMETERS_SET_TOPIC =
@@ -281,6 +335,8 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         uint32 indexed destinationDomain, bytes32 indexed mintRecipient, uint256 amount, uint256 maxFee
     );
     event IntegrationRemoved(bytes32 indexed id);
+    event SetRateLimit(address indexed rateLimits, bytes32 indexed key, uint256 maxAmount, uint256 slope);
+    event CallControllerAction(address indexed controller, bytes data);
 
     struct ExistingRateLimitsSnapshot {
         IRateLimitsLike.RateLimitData[8] data;
@@ -311,8 +367,8 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     function setUp() public {
         _setupDomains(MAINNET_FORK_BLOCK, BASE_FORK_BLOCK);
         _setupPayload(DEPLOYED_PAYLOAD);
-        _simulateSkyCoreBasePrerequisites();
         _setupBasePayload(DEPLOYED_BASE_PAYLOAD);
+        _setupBaseRelay();
     }
 
     /**********************************************************************************************/
@@ -668,13 +724,8 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
             _expectedCctpWires(),
             "base-beacon-cctp"
         );
-        // Registered by the Sky Core spell (Pre-requirements #1) with the Ethereum wires; simulated in setUp.
-        _assertConfigWires(
-            IBeaconLike(BASE_SKY_PAU_BEACON).getConfig(ERC4626_FACET_INTEGRATION_ID),
-            BASE_SKY_PAU_ERC4626_FACET,
-            _expectedErc4626Wires(),
-            "base-beacon-erc4626"
-        );
+        // The ERC-4626 facet registration on the Beacon (Pre-requirements #1) is checked by
+        // test_BASE_skyCoreRegisteredErc4626FacetForBasePayload.
 
         ICCTPFacetLike cctpFacet = ICCTPFacetLike(BASE_SKY_PAU_CCTP_FACET);
         assertEq(cctpFacet.VERSION(), "1.0.0", "base-cctp-version");
@@ -724,6 +775,9 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         assertEq(agentRoles.getActor(0), BASE_OSERO_OPERATOR, "base-agent-osero-relayer-actor");
         assertEq(agentRoles.getActor(1), BASE_SOTER_OPERATOR, "base-agent-core-operator-relayer-actor");
         assertEq(agent.grantorCount(), 0, "base-agent-grantor-count");
+        assertFalse(agentRoles.getIsGrantor(BASE_OSERO_OPERATOR), "base-osero-relayer-is-grantor");
+        assertFalse(agentRoles.getIsGrantor(BASE_SOTER_OPERATOR), "base-core-operator-relayer-is-grantor");
+        assertFalse(agentRoles.getIsGrantor(BASE_SOTER_FREEZER), "base-freezer-is-grantor");
         assertEq(agent.revokerCount(), 1, "base-agent-revoker-count");
         assertEq(agent.getRevoker(0), BASE_SOTER_FREEZER, "base-agent-revoker");
         assertFalse(agentRoles.getIsAdmin(BASE_PAS_CONFIGURATOR), "base-pas-is-agent-admin");
@@ -904,10 +958,41 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
 
     /// @dev Pre-requirements #1: until Sky Core registers the ERC-4626 facet on the Sky PAU Beacon on Base,
     ///      `updateIntegrations` reverts and so does the whole Base payload.
+    /// @dev Pre-requirements #1, end to end against the Base state at BASE_FORK_BLOCK: Sky Core has registered
+    ///      `ERC4626_FACET` on the Sky PAU Beacon on Base with the Ethereum wires, so the relayed Base payload
+    ///      executes. Fails until the November 19, 2026 Sky Core spell registers it on Base and BASE_FORK_BLOCK is
+    ///      moved past the registration.
+    function test_BASE_skyCoreRegisteredErc4626FacetForBasePayload() public {
+        _selectBase();
+        _assertSkyCoreRegisteredErc4626Facet();
+
+        _selectEthereum();
+        _executeSpellViaStarGuard(payload);
+        uint256 actionsSetId = _relayBasePayload();
+
+        vm.prank(PERMISSIONLESS_EXECUTOR);
+        baseExecutor.execute(actionsSetId);
+
+        assertEq(
+            uint256(baseExecutor.getCurrentState(actionsSetId)),
+            uint256(IExecutor.ActionsSetState.Executed),
+            "base-actions-set-not-executed"
+        );
+        _assertConfigEquals(
+            baseController.getConfig(ERC4626_FACET_INTEGRATION_ID),
+            IBeaconLike(BASE_SKY_PAU_BEACON).getConfig(ERC4626_FACET_INTEGRATION_ID),
+            "base-erc4626-wired-from-beacon"
+        );
+    }
+
+    /// @dev Without the registration, the whole Base payload reverts and the actions set stays queued.
     function test_BASE_payloadRevertsUntilSkyCoreRegistersErc4626Facet() public {
         _selectBase();
-        vm.prank(_baseBeaconAdmin());
-        IBeaconAdminLike(BASE_SKY_PAU_BEACON).removeIntegration(ERC4626_FACET_INTEGRATION_ID);
+        IBeaconAdminLike beacon = IBeaconAdminLike(BASE_SKY_PAU_BEACON);
+        if (beacon.getConfig(ERC4626_FACET_INTEGRATION_ID).facet != address(0)) {
+            vm.prank(_baseBeaconAdmin());
+            beacon.removeIntegration(ERC4626_FACET_INTEGRATION_ID);
+        }
 
         _selectEthereum();
         _executeSpellViaStarGuard(payload);
@@ -915,6 +1000,12 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
 
         vm.expectRevert(abi.encodeWithSignature("IntegrationNotFound(bytes32)", ERC4626_FACET_INTEGRATION_ID));
         baseExecutor.execute(actionsSetId);
+
+        assertEq(
+            uint256(baseExecutor.getCurrentState(actionsSetId)),
+            uint256(IExecutor.ActionsSetState.Queued),
+            "base-actions-set-not-queued-after-revert"
+        );
     }
 
     function test_BASE_directPayloadExecutionRevertsWithoutExecutorAuthority() public onBase {
@@ -1189,6 +1280,275 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
 
     /// @dev Post-checks #6: a small round trip from Ethereum to the vault on Base and back through CCTP,
     ///      run by the Osero Relayer Multisig as Actor on both chains.
+    function test_BASE_cctpToEthereumRateLimitRecoversOverTime() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+        deal(BASE_USDC, BASE_OSERO_ALM_PROXY, OPERATIONAL_TEST_USDC_AMOUNT);
+
+        _callAsBaseOseroActor(abi.encodeCall(ICCTPControllerLike.cctp_transfer, (OPERATIONAL_TEST_USDC_AMOUNT, 0, 0)));
+        assertEq(
+            baseRateLimits.getCurrentRateLimit(CCTP_TO_ETHEREUM_RATE_LIMIT_KEY),
+            CCTP_TO_DOMAIN_MAX - OPERATIONAL_TEST_USDC_AMOUNT,
+            "base-cctp-to-ethereum-limit-not-decreased"
+        );
+
+        vm.warp(block.timestamp + PARTIAL_RECOVERY_TIME);
+        assertEq(
+            baseRateLimits.getCurrentRateLimit(CCTP_TO_ETHEREUM_RATE_LIMIT_KEY),
+            CCTP_TO_DOMAIN_MAX - OPERATIONAL_TEST_USDC_AMOUNT + CCTP_TO_DOMAIN_SLOPE * PARTIAL_RECOVERY_TIME,
+            "base-cctp-to-ethereum-limit-not-recovering"
+        );
+
+        vm.warp(block.timestamp + 1 days);
+        assertEq(
+            baseRateLimits.getCurrentRateLimit(CCTP_TO_ETHEREUM_RATE_LIMIT_KEY),
+            CCTP_TO_DOMAIN_MAX,
+            "base-cctp-to-ethereum-limit-not-capped"
+        );
+        assertEq(baseRateLimits.getCurrentRateLimit(CCTP_RATE_LIMIT_KEY), type(uint256).max, "base-cctp-limit-changed");
+    }
+
+    /// @dev Proposed action #8: the second Actor, the Core Operator Relayer Multisig on Base, operates the Osero
+    ///      controller on Base through the AdministeredAgent.
+    function test_BASE_coreOperatorRelayerOperatesThroughAdministeredAgent() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+
+        IAdministeredAgentLike agent = IAdministeredAgentLike(BASE_OSERO_ADMINISTERED_AGENT);
+        assertTrue(agent.getIsActor(BASE_SOTER_OPERATOR), "base-core-operator-relayer-not-agent-actor");
+
+        deal(BASE_USDC, BASE_OSERO_ALM_PROXY, ROUND_TRIP_USDC_AMOUNT);
+        uint256 expectedShares = IVaultV2Like(OGUSDCB_VAULT).previewDeposit(ROUND_TRIP_USDC_AMOUNT);
+        assertGt(expectedShares, 0, "ogusdcb-preview-deposit-zero");
+
+        vm.prank(BASE_SOTER_OPERATOR);
+        // Lint false positive: the agent's `call(address,bytes)` interface function reverts on failure.
+        // forge-lint: disable-next-line(unchecked-call)
+        agent.call(
+            BASE_OSERO_CONTROLLER,
+            abi.encodeCall(IOseroPauControllerLike.erc4626_deposit, (OGUSDCB_VAULT, ROUND_TRIP_USDC_AMOUNT, 0))
+        );
+
+        assertEq(ogusdcb.balanceOf(BASE_OSERO_ALM_PROXY), expectedShares, "proxy-ogusdcb-shares");
+        assertEq(baseUsdc.balanceOf(BASE_OSERO_ALM_PROXY), 0, "proxy-usdc-not-deposited");
+        assertEq(
+            baseRateLimits.getCurrentRateLimit(OGUSDCB_DEPOSIT_RATE_LIMIT_KEY),
+            OGUSDCB_DEPOSIT_MAX - ROUND_TRIP_USDC_AMOUNT,
+            "ogusdcb-deposit-limit-not-decreased"
+        );
+    }
+
+    /// @dev Pre-requirements #2 and Pre-deployed contracts #11-14: each Safe on Base has the same owners (in any
+    ///      order: a Safe lists owners by insertion) and threshold as the Safe at the same address on Ethereum, with
+    ///      no module and no guard.
+    function test_BASE_multisigsMatchEthereumCounterparts() public {
+        address[4] memory safes = [BASE_OSERO_OPERATOR, BASE_SOTER_OPERATOR, BASE_SOTER_FREEZER, BASE_OSERO_CBEAM];
+        string[4] memory labels =
+            ["osero-relayer-multisig", "core-operator-relayer-multisig", "freezer-multisig", "osero-operator-multisig"];
+
+        for (uint256 i = 0; i < safes.length; ++i) {
+            _selectEthereum();
+            address[] memory ethereumOwners = _sortedAddresses(ISafeLike(safes[i]).getOwners());
+            uint256 ethereumThreshold = ISafeLike(safes[i]).getThreshold();
+
+            _selectBase();
+            assertEq(
+                _sortedAddresses(ISafeLike(safes[i]).getOwners()), ethereumOwners, string.concat(labels[i], "-owners")
+            );
+            assertEq(ISafeLike(safes[i]).getThreshold(), ethereumThreshold, string.concat(labels[i], "-threshold"));
+            (address[] memory modules,) = ISafeLike(safes[i]).getModulesPaginated(SAFE_SENTINEL_MODULES, 10);
+            assertEq(modules.length, 0, string.concat(labels[i], "-modules"));
+            assertEq(vm.load(safes[i], SAFE_GUARD_STORAGE_SLOT), bytes32(0), string.concat(labels[i], "-guard"));
+        }
+    }
+
+    /**********************************************************************************************/
+    /*** Base PAS (Proposed actions #16-17)                                                     ***/
+    /**********************************************************************************************/
+
+    function test_BASE_pasRejectsUnpairedCallerAfterAuthorization() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+
+        IPASConfiguratorLike configurator = IPASConfiguratorLike(BASE_PAS_CONFIGURATOR);
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/not-authorized-ratelimits-cBeam"));
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS,
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY,
+            PAS_FIXTURE_LOWERED_CCTP_MAX,
+            PAS_FIXTURE_LOWERED_CCTP_SLOPE
+        );
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/not-authorized-controller-cBeam"));
+        configurator.callControllerAction(BASE_OSERO_CONTROLLER, _pasFixtureBaseControllerAction());
+    }
+
+    /// @dev High-level goal of Proposed action #17: once paired, the Osero Operator Multisig on Base adjusts
+    ///      Osero's Base rate limits through the Configurator on Base, within the BeamState bounds.
+    function test_BASE_pasConfiguratorSetsRateLimitAfterSkyCorePairing() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+        _pairOseroCBeamOnBaseAsSkyCore();
+
+        IPASConfiguratorLike configurator = IPASConfiguratorLike(BASE_PAS_CONFIGURATOR);
+        IPASBeamStateLike beamState = IPASBeamStateLike(BASE_PAS_BEAM_STATE);
+
+        // A decrease applies at once.
+        vm.expectEmit(BASE_PAS_CONFIGURATOR);
+        emit SetRateLimit(
+            BASE_OSERO_RATE_LIMITS,
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY,
+            PAS_FIXTURE_LOWERED_CCTP_MAX,
+            PAS_FIXTURE_LOWERED_CCTP_SLOPE
+        );
+        vm.prank(BASE_OSERO_CBEAM);
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS,
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY,
+            PAS_FIXTURE_LOWERED_CCTP_MAX,
+            PAS_FIXTURE_LOWERED_CCTP_SLOPE
+        );
+        _assertRateLimitOn(
+            BASE_OSERO_RATE_LIMITS,
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY,
+            PAS_FIXTURE_LOWERED_CCTP_MAX,
+            PAS_FIXTURE_LOWERED_CCTP_SLOPE,
+            "base-cctp-to-ethereum-lowered"
+        );
+
+        // An increase back to the spell's values (the BeamState default) consumes the hop and keeps the current
+        // capacity.
+        vm.prank(BASE_OSERO_CBEAM);
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS, CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, CCTP_TO_DOMAIN_MAX, CCTP_TO_DOMAIN_SLOPE
+        );
+        IRateLimitsLike.RateLimitData memory raised = baseRateLimits.getRateLimitData(CCTP_TO_ETHEREUM_RATE_LIMIT_KEY);
+        assertEq(raised.maxAmount, CCTP_TO_DOMAIN_MAX, "base-cctp-to-ethereum-raised-max-amount");
+        assertEq(raised.slope, CCTP_TO_DOMAIN_SLOPE, "base-cctp-to-ethereum-raised-slope");
+        assertEq(raised.lastAmount, PAS_FIXTURE_LOWERED_CCTP_MAX, "base-cctp-to-ethereum-raised-last-amount");
+        assertEq(raised.lastUpdated, block.timestamp, "base-cctp-to-ethereum-raised-last-updated");
+
+        // A further increase inside the hop is rejected.
+        uint256 maxChangeAmount = CCTP_TO_DOMAIN_MAX * beamState.getMaxChange(BASE_OSERO_RATE_LIMITS) / 1e18;
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/increment-too-soon"));
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS, CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, maxChangeAmount, CCTP_TO_DOMAIN_SLOPE
+        );
+
+        // After the hop, an increase is bounded by maxChange.
+        vm.warp(block.timestamp + beamState.getHop(BASE_OSERO_RATE_LIMITS));
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/exceeds-max-amount"));
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS, CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, maxChangeAmount + 1, CCTP_TO_DOMAIN_SLOPE
+        );
+
+        vm.prank(BASE_OSERO_CBEAM);
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS, CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, maxChangeAmount, CCTP_TO_DOMAIN_SLOPE
+        );
+        assertEq(
+            baseRateLimits.getRateLimitData(CCTP_TO_ETHEREUM_RATE_LIMIT_KEY).maxAmount,
+            maxChangeAmount,
+            "base-cctp-to-ethereum-raised-above-default"
+        );
+    }
+
+    /// @dev The aggregate CCTP and vault withdrawal keys have no BeamState default, so the Configurator can only
+    ///      keep them unlimited, even though it holds DEFAULT_ADMIN_ROLE on the rate limits.
+    function test_BASE_pasConfiguratorCannotChangeUnlimitedRateLimitsAfterSkyCorePairing() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+        _pairOseroCBeamOnBaseAsSkyCore();
+
+        IPASConfiguratorLike configurator = IPASConfiguratorLike(BASE_PAS_CONFIGURATOR);
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/unlimited-incorrect-params"));
+        configurator.setRateLimit(BASE_OSERO_RATE_LIMITS, CCTP_RATE_LIMIT_KEY, CCTP_TO_DOMAIN_MAX, CCTP_TO_DOMAIN_SLOPE);
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/unlimited-incorrect-params"));
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS, OGUSDCB_WITHDRAW_RATE_LIMIT_KEY, OGUSDCB_DEPOSIT_MAX, OGUSDCB_DEPOSIT_SLOPE
+        );
+
+        _assertUnlimitedRateLimitOn(BASE_OSERO_RATE_LIMITS, CCTP_RATE_LIMIT_KEY, "base-cctp");
+        _assertUnlimitedRateLimitOn(BASE_OSERO_RATE_LIMITS, OGUSDCB_WITHDRAW_RATE_LIMIT_KEY, "ogusdcb-withdraw");
+    }
+
+    /// @dev High-level goal of Proposed action #16: once paired, the Osero Operator Multisig on Base runs the
+    ///      controller actions Sky Core enables, such as `removeIntegrations`, through the Configurator on Base.
+    function test_BASE_pasConfiguratorCallsControllerActionAfterSkyCorePairing() public {
+        _executeAllPayloadsAndBridges();
+        _selectBase();
+        _pairOseroCBeamOnBaseAsSkyCore();
+
+        IPASConfiguratorLike configurator = IPASConfiguratorLike(BASE_PAS_CONFIGURATOR);
+
+        // Only the actions Sky Core registered in BeamState can be dispatched.
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/not-valid-data"));
+        configurator.callControllerAction(
+            BASE_OSERO_CONTROLLER,
+            abi.encodeCall(IOseroPauControllerLike.erc4626_setMaxExchangeRate, (OGUSDCB_VAULT, 1e18, 3e6))
+        );
+
+        bytes memory data = _pasFixtureBaseControllerAction();
+        vm.expectEmit(BASE_OSERO_CONTROLLER);
+        emit IntegrationRemoved(ERC4626_FACET_INTEGRATION_ID);
+        vm.expectEmit(BASE_PAS_CONFIGURATOR);
+        emit CallControllerAction(BASE_OSERO_CONTROLLER, data);
+        vm.prank(BASE_OSERO_CBEAM);
+        configurator.callControllerAction(BASE_OSERO_CONTROLLER, data);
+
+        assertEq(baseController.integrations().length, 1, "base-integration-count-after-pas-removal");
+        assertEq(
+            baseController.getDispatch(IOseroPauControllerLike.erc4626_deposit.selector).facet,
+            address(0),
+            "erc4626-deposit-still-wired"
+        );
+    }
+
+    /// @dev Pairing alone is not enough: without the Base payload's two grants, the Configurator passes every
+    ///      PAS-side check and then fails on the Osero AccessControls and RateLimits role checks on Base.
+    function test_BASE_pasOperationsRevertWithoutSpellGrantsEvenWhenPaired() public {
+        _selectBase();
+        _pairOseroCBeamOnBaseAsSkyCore();
+
+        IPASConfiguratorLike configurator = IPASConfiguratorLike(BASE_PAS_CONFIGURATOR);
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", BASE_PAS_CONFIGURATOR, DEFAULT_ADMIN_ROLE
+            )
+        );
+        configurator.setRateLimit(
+            BASE_OSERO_RATE_LIMITS,
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY,
+            PAS_FIXTURE_LOWERED_CCTP_MAX,
+            PAS_FIXTURE_LOWERED_CCTP_SLOPE
+        );
+
+        vm.prank(BASE_OSERO_CBEAM);
+        vm.expectRevert(bytes("Configurator/call-failed"));
+        configurator.callControllerAction(BASE_OSERO_CONTROLLER, _pasFixtureBaseControllerAction());
+
+        // The controller call fails on its admin check.
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = ERC4626_FACET_INTEGRATION_ID;
+        vm.prank(BASE_PAS_CONFIGURATOR);
+        vm.expectRevert(abi.encodeWithSignature("NotAdmin(address)", BASE_PAS_CONFIGURATOR));
+        baseController.removeIntegrations(ids);
+
+        _assertUnsetRateLimitOn(BASE_OSERO_RATE_LIMITS, CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, "base-cctp-to-ethereum");
+    }
+
     function test_ETHEREUM_cctpRoundTripThroughBaseVault() public {
         _executeAllPayloadsAndBridges();
         cctpBridge = CCTPV2BridgeTesting.createCircleBridge(ethereumDomain, baseDomain);
@@ -1257,20 +1617,81 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     /*** Helpers                                                                                ***/
     /**********************************************************************************************/
 
-    /// @dev Pre-requirements #1, until the November 19, 2026 Sky Core spell executes: register the ERC-4626
-    ///      facet on Base on the Sky PAU Beacon on Base with the wires registered on Ethereum.
-    function _simulateSkyCoreBasePrerequisites() internal onBase {
-        IBeaconAdminLike beacon = IBeaconAdminLike(BASE_SKY_PAU_BEACON);
-        if (beacon.getConfig(ERC4626_FACET_INTEGRATION_ID).facet != address(0)) return;
+    /// @dev Base prerequisites checked before every execution of the Base payload (see `CrossChainSpellRunner`).
+    function _assertBasePrerequisites() internal view override {
+        _assertSkyCoreRegisteredErc4626Facet();
+    }
 
-        vm.prank(_baseBeaconAdmin());
-        beacon.setIntegration(
-            ERC4626_FACET_INTEGRATION_ID, PauConfig(BASE_SKY_PAU_ERC4626_FACET, _expectedErc4626Wires())
+    /// @dev Pre-requirements #1: the November 19, 2026 Sky Core spell registers the ERC-4626 facet on Base on the
+    ///      Sky PAU Beacon on Base with the wires registered on Ethereum. Must be called with Base selected.
+    function _assertSkyCoreRegisteredErc4626Facet() internal view {
+        PauConfig memory config = IBeaconLike(BASE_SKY_PAU_BEACON).getConfig(ERC4626_FACET_INTEGRATION_ID);
+        assertEq(
+            config.facet,
+            BASE_SKY_PAU_ERC4626_FACET,
+            "sky-core-prerequisite-missing-erc4626-facet-not-registered-on-base-beacon"
         );
+        _assertConfigWires(config, BASE_SKY_PAU_ERC4626_FACET, _expectedErc4626Wires(), "base-beacon-erc4626");
     }
 
     /// @dev The Spark Executor on Base until the November 5, 2026 Spark spell hands Beacon admin to the
     ///      Governance Relay on Base.
+    /// @dev Base PAS fixture, NOT part of this spell. Models the November 19, 2026 Sky Core spell
+    ///      (Pre-requirements #5): it registers the Osero RateLimits and Controller on Base in BeamState on Base,
+    ///      registers and pairs the Osero Operator Multisig on Base as cBEAM, and registers a rate-limit default and
+    ///      a controller action. On Base these go through the Sky Governance Relay, the BeamState ward.
+    function _pairOseroCBeamOnBaseAsSkyCore() internal onBase {
+        IPASBeamStateLike beamState = IPASBeamStateLike(BASE_PAS_BEAM_STATE);
+
+        // Pre-state at the fork block: PAS is live on Base, Osero is not registered or paired.
+        assertEq(beamState.wards(BASE_SKY_GOV_RELAY), 1, "base-gov-relay-not-beamstate-ward");
+        assertFalse(beamState.stopped(), "base-beamstate-stopped");
+        assertEq(beamState.rateLimits(BASE_OSERO_RATE_LIMITS), 0, "base-osero-ratelimits-already-registered");
+        assertEq(beamState.controllers(BASE_OSERO_CONTROLLER), 0, "base-osero-controller-already-registered");
+        assertEq(beamState.cBeams(BASE_OSERO_CBEAM), 0, "base-osero-cbeam-already-registered");
+        assertGt(beamState.getHop(BASE_OSERO_RATE_LIMITS), 0, "base-beamstate-hop-not-set");
+        assertGt(beamState.getMaxChange(BASE_OSERO_RATE_LIMITS), 1e18, "base-beamstate-max-change-not-set");
+
+        vm.startPrank(BASE_SKY_GOV_RELAY);
+        beamState.addRateLimits(BASE_OSERO_RATE_LIMITS);
+        beamState.addController(BASE_OSERO_CONTROLLER);
+        beamState.addCBeam(BASE_OSERO_CBEAM);
+        beamState.setCBeamForRateLimits(BASE_OSERO_RATE_LIMITS, BASE_OSERO_CBEAM);
+        beamState.setCBeamForController(BASE_OSERO_CONTROLLER, BASE_OSERO_CBEAM);
+        beamState.addInitRateLimits(
+            CCTP_TO_ETHEREUM_RATE_LIMIT_KEY, BASE_OSERO_RATE_LIMITS, CCTP_TO_DOMAIN_MAX, CCTP_TO_DOMAIN_SLOPE
+        );
+        beamState.addInitControllerActions(_pasFixtureBaseControllerAction(), BASE_OSERO_CONTROLLER);
+        vm.stopPrank();
+
+        assertEq(
+            beamState.rateLimitsCBeams(BASE_OSERO_RATE_LIMITS, BASE_OSERO_CBEAM), 1, "base-cbeam-not-paired-ratelimits"
+        );
+        assertEq(
+            beamState.controllersCBeams(BASE_OSERO_CONTROLLER, BASE_OSERO_CBEAM), 1, "base-cbeam-not-paired-controller"
+        );
+    }
+
+    function _sortedAddresses(address[] memory addresses) internal pure returns (address[] memory) {
+        for (uint256 i = 1; i < addresses.length; ++i) {
+            address current = addresses[i];
+            uint256 j = i;
+            while (j > 0 && addresses[j - 1] > current) {
+                addresses[j] = addresses[j - 1];
+                --j;
+            }
+            addresses[j] = current;
+        }
+        return addresses;
+    }
+
+    /// @dev The controller action the Base PAS fixture registers for the Osero cBEAM on Base.
+    function _pasFixtureBaseControllerAction() internal pure returns (bytes memory) {
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = ERC4626_FACET_INTEGRATION_ID;
+        return abi.encodeCall(IOseroPauControllerLike.removeIntegrations, (ids));
+    }
+
     function _baseBeaconAdmin() internal view returns (address admin) {
         IBeaconAdminLike beacon = IBeaconAdminLike(BASE_SKY_PAU_BEACON);
         admin = beacon.hasRole(DEFAULT_ADMIN_ROLE, BASE_SKY_GOV_RELAY) ? BASE_SKY_GOV_RELAY : BASE_SPARK_EXECUTOR;

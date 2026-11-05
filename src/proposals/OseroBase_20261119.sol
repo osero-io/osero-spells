@@ -5,6 +5,10 @@ import {Base} from "osero-address-registry/Base.sol";
 import {Ethereum as OseroEthereum} from "osero-address-registry/Ethereum.sol";
 
 import {PAUInit, PAUInstance} from "diamond-pau/deploy/PAUInit.sol";
+import {ICCTPController} from "diamond-pau/src/facets/cctp/ICCTPController.sol";
+import {IERC4626Controller} from "diamond-pau/src/facets/erc4626/IERC4626Controller.sol";
+import {IController} from "diamond-pau/src/interfaces/IController.sol";
+import {IRateLimits} from "diamond-pau/src/interfaces/IRateLimits.sol";
 
 import {
     AdministeredAgentInit,
@@ -16,26 +20,6 @@ import {PASAuthorizeInPAU} from "pas/deploy/PASAuthorizeInPAU.sol";
 import {CCTPForwarder} from "xchain-helpers/forwarders/CCTPForwarder.sol";
 
 import {OseroPayloadBase} from "../OseroPayloadBase.sol";
-
-interface IControllerLike {
-    function updateIntegrations(bytes32[] calldata ids) external;
-    function cctp_setDomainParameters(
-        uint32 destinationDomain,
-        bytes32 recipient,
-        uint32 minFeeCapRate,
-        uint32 maxFeeCapRate
-    ) external;
-    function cctp_toCCTPRateLimitKey() external pure returns (bytes32 key);
-    function cctp_getToDomainRateLimitKey(uint32 destinationDomain) external pure returns (bytes32 key);
-    function erc4626_setMaxExchangeRate(address token, uint256 shares, uint256 maxExpectedAssets) external;
-    function erc4626_getDepositRateLimitKey(address token, address asset) external pure returns (bytes32 key);
-    function erc4626_getWithdrawRateLimitKey(address token) external pure returns (bytes32 key);
-}
-
-interface IRateLimitsLike {
-    function setRateLimitData(bytes32 key, uint256 maxAmount, uint256 slope) external;
-    function setUnlimitedRateLimitData(bytes32 key) external;
-}
 
 /// @title  November 19, 2026 Osero Base Proposal
 /// @notice Sets up the Osero Diamond PAU on Base: initializes the PAU and its AdministeredAgent, enables the
@@ -82,67 +66,95 @@ contract OseroBase_20261119 is OseroPayloadBase {
     uint256 internal constant OGUSDCB_DEPOSIT_SLOPE = uint256(10_000_000e6) / 1 days;
 
     function execute() external override {
-        // [Base] Initialize the Osero Diamond PAU on Base and grant ALLOCATOR_ROLE to its AdministeredAgent
+        // Note: every rate limit key below is read from the Osero controller on Base once the facet is wired, as
+        //       `RateLimitsHelper` reads the Sky PAU facets on Ethereum and cannot be used on Base.
+
+        // [Base] Proposed action #6: Initialize the Osero Diamond PAU on Base
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed actions #6 and #7
         _initializePau();
 
-        // [Base] Register the Actors and the Revoker on the Osero AdministeredAgent on Base
+        // [Base] Proposed action #7: Grant `ALLOCATOR_ROLE` on the Osero `AccessControls` on Base to the Osero
+        //   `AdministeredAgent` on Base
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed action #8
+        _addAllocator();
+
+        // [Base] Proposed action #8: Register the Actors and the Revoker on the Osero `AdministeredAgent` on Base
+        //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
         _initializeAdministeredAgent();
 
-        // [Base] Enable the CCTP and ERC-4626 integrations on the Osero PAU controller on Base
+        // [Base] Proposed action #9: Enable the CCTP and ERC-4626 integrations on the Osero `Controller` on Base
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed action #9
+        //   Note: Sky Core must first register `ERC4626_FACET` on the Sky PAU Beacon on Base (Pre-requirements #1).
+        //         Until then `updateIntegrations` reverts with `IntegrationNotFound`, so the whole payload reverts
+        //         and the actions set stays queued on the Osero Executor on Base, executable until its 7-day grace
+        //         period ends.
         _enableIntegrations();
 
-        // [Base] Set the CCTP domain parameters for Ethereum
+        // [Base] Proposed action #10: Set the CCTP domain parameters for Ethereum Mainnet
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed action #10
         _setEthereumDomainParameters();
 
-        // [Base] Add the CCTP rate limits toward Ethereum on the PAU rate limits on Base
+        // [Base] Proposed action #11: Set the `LIMIT_USDC_TO_CCTP` rate limit on Base to unlimited
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed actions #11 and #12
-        _setupCctpRateLimits();
+        _setUnlimitedCctpRateLimit();
 
-        // [Base] Onboard the Osero x Gauntlet USDC Prime Vault on Base
+        // [Base] Proposed action #12: Set the `LIMIT_USDC_TO_DOMAIN` rate limit for Ethereum Mainnet on Base to
+        //   `maxAmount` `10,000,000 USDC` and `slope` `50,000,000 USDC/day`
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed actions #13 to #15
-        _onboardOgusdcb();
+        _setCctpToEthereumRateLimit();
 
-        // [Base] Authorize the Sky PAS Configurator on Base on the Osero AccessControls and RateLimits on Base
+        // [Base] Proposed action #13: Set the maximum exchange rate for the Osero x Gauntlet USDC Prime Vault on Base
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
-        //   Proposed actions #16 and #17
+        _setOgusdcbMaxExchangeRate();
+
+        // [Base] Proposed action #14: Set the vault deposit rate limit to `maxAmount` `15,000,000 USDC` and `slope`
+        //   `10,000,000 USDC/day`
+        //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
+        _setOgusdcbDepositRateLimit();
+
+        // [Base] Proposed action #15: Set the vault withdrawal rate limit to unlimited
+        //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
+        _setUnlimitedOgusdcbWithdrawRateLimit();
+
+        // [Base] Proposed action #16: Grant `DEFAULT_ADMIN_ROLE` on the Osero `AccessControls` on Base to the
+        //   Configurator on Base
+        // [Base] Proposed action #17: Grant `DEFAULT_ADMIN_ROLE` on the Osero ALM Rate Limits contract on Base to the
+        //   Configurator on Base
+        //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
+        //   Note: `PASAuthorizeInPAU.authorize` makes both grants in one call, as in the September 24, 2026 spell. It
+        //         runs after Proposed action #6, because `PAUInit.init` requires the Executor to be the only
+        //         `AccessControls` admin.
         _authorizePasConfigurator();
     }
 
-    function _initializePau() private {
-        PAUInstance memory inst = PAUInstance({
+    function _pauInstance() private pure returns (PAUInstance memory) {
+        return PAUInstance({
             accessControls: Base.OSERO_ACCESS_CONTROLS,
             almProxy: Base.OSERO_ALM_PROXY,
             beacon: SKY_PAU_BEACON,
             controller: Base.OSERO_CONTROLLER,
             rateLimits: Base.OSERO_RATE_LIMITS
         });
+    }
 
-        // Forum Proposed action #6. Integrations are imported in Proposed action #9.
+    function _initializePau() private {
+        // Integrations are imported in Proposed action #9.
         // BEFORE: the controller holds CONTROLLER on neither the ALM proxy nor the rate limits.
         // AFTER:  the controller holds CONTROLLER on both.
-        PAUInit.init(inst, new bytes32[](0));
+        PAUInit.init(_pauInstance(), new bytes32[](0));
+    }
 
-        // Forum Proposed action #7
-        PAUInit.addAllocator(inst, Base.OSERO_ADMINISTERED_AGENT); // BEFORE: no ALLOCATOR_ROLE holder, AFTER: AdministeredAgent
+    function _addAllocator() private {
+        PAUInit.addAllocator(_pauInstance(), Base.OSERO_ADMINISTERED_AGENT); // BEFORE: no ALLOCATOR_ROLE holder, AFTER: AdministeredAgent
     }
 
     function _initializeAdministeredAgent() private {
         address[] memory actors = new address[](2);
-        actors[0] = Base.OSERO_OPERATOR;
-        actors[1] = SOTER_OPERATOR;
+        actors[0] = Base.OSERO_OPERATOR; // Osero Relayer Multisig on Base (Pre-deployed contracts #11)
+        actors[1] = SOTER_OPERATOR; // Core Operator Relayer Multisig on Base (Pre-deployed contracts #12)
 
         address[] memory revokers = new address[](1);
-        revokers[0] = SOTER_FREEZER;
+        revokers[0] = SOTER_FREEZER; // Freezer Multisig on Base (Pre-deployed contracts #13)
 
         // BEFORE: Executor is the only Admin; no Actor, Grantor or Revoker.
         // AFTER:  Executor is the only Admin; Actors: Osero and Core Operator Relayer Multisigs; Revoker: Freezer Multisig; no Grantor.
@@ -158,11 +170,11 @@ contract OseroBase_20261119 is OseroPayloadBase {
         bytes32[] memory ids = new bytes32[](2);
         ids[0] = CCTP_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller, AFTER: wired from the beacon config
         ids[1] = ERC4626_FACET_INTEGRATION_ID; // BEFORE: not wired on the controller, AFTER: wired from the beacon config
-        IControllerLike(Base.OSERO_CONTROLLER).updateIntegrations(ids);
+        IController(Base.OSERO_CONTROLLER).updateIntegrations(ids);
     }
 
     function _setEthereumDomainParameters() private {
-        IControllerLike(Base.OSERO_CONTROLLER).cctp_setDomainParameters({
+        ICCTPController(Base.OSERO_CONTROLLER).cctp_setDomainParameters({
             destinationDomain: CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
             recipient: bytes32(uint256(uint160(OseroEthereum.OSERO_ALM_PROXY))), // BEFORE: bytes32(0), AFTER: Osero ALM Proxy on Ethereum
             minFeeCapRate: CCTP_MIN_FEE_CAP_RATE, // BEFORE: 0, AFTER: 0
@@ -170,40 +182,41 @@ contract OseroBase_20261119 is OseroPayloadBase {
         });
     }
 
-    function _setupCctpRateLimits() private {
-        IControllerLike controller = IControllerLike(Base.OSERO_CONTROLLER);
+    function _setUnlimitedCctpRateLimit() private {
+        IRateLimits(Base.OSERO_RATE_LIMITS)
+            .setUnlimitedRateLimitData(ICCTPController(Base.OSERO_CONTROLLER).cctp_toCCTPRateLimitKey()); // BEFORE: unset, AFTER: unlimited
+    }
 
-        // Forum Proposed action #11
-        IRateLimitsLike(Base.OSERO_RATE_LIMITS).setUnlimitedRateLimitData(controller.cctp_toCCTPRateLimitKey()); // BEFORE: unset, AFTER: unlimited
-
-        // Forum Proposed action #12
-        IRateLimitsLike(Base.OSERO_RATE_LIMITS).setRateLimitData({
-            key: controller.cctp_getToDomainRateLimitKey(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM),
+    function _setCctpToEthereumRateLimit() private {
+        IRateLimits(Base.OSERO_RATE_LIMITS).setRateLimitData({
+            key: ICCTPController(Base.OSERO_CONTROLLER)
+                .cctp_getToDomainRateLimitKey(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM),
             maxAmount: CCTP_TO_ETHEREUM_MAX, // BEFORE: unset, AFTER: 10_000_000e6
             slope: CCTP_TO_ETHEREUM_SLOPE // BEFORE: unset, AFTER: uint256(50_000_000e6) / 1 days
         });
     }
 
-    function _onboardOgusdcb() private {
-        IControllerLike controller = IControllerLike(Base.OSERO_CONTROLLER);
-
-        // Forum Proposed action #13
-        controller.erc4626_setMaxExchangeRate({
+    function _setOgusdcbMaxExchangeRate() private {
+        IERC4626Controller(Base.OSERO_CONTROLLER).erc4626_setMaxExchangeRate({
             token: OGUSDCB_VAULT,
             shares: OGUSDCB_MAX_EXCHANGE_RATE_SHARES,
             maxExpectedAssets: OGUSDCB_MAX_EXCHANGE_RATE_ASSETS // BEFORE: 0 (unset), AFTER: 2e6 (stored as 2e24)
         });
+    }
 
-        // Forum Proposed action #14
-        IRateLimitsLike(Base.OSERO_RATE_LIMITS).setRateLimitData({
-            key: controller.erc4626_getDepositRateLimitKey(OGUSDCB_VAULT, USDC),
+    function _setOgusdcbDepositRateLimit() private {
+        IRateLimits(Base.OSERO_RATE_LIMITS).setRateLimitData({
+            key: IERC4626Controller(Base.OSERO_CONTROLLER).erc4626_getDepositRateLimitKey(OGUSDCB_VAULT, USDC),
             maxAmount: OGUSDCB_DEPOSIT_MAX, // BEFORE: unset, AFTER: 15_000_000e6
             slope: OGUSDCB_DEPOSIT_SLOPE // BEFORE: unset, AFTER: uint256(10_000_000e6) / 1 days
         });
+    }
 
-        // Forum Proposed action #15
-        IRateLimitsLike(Base.OSERO_RATE_LIMITS)
-            .setUnlimitedRateLimitData(controller.erc4626_getWithdrawRateLimitKey(OGUSDCB_VAULT)); // BEFORE: unset, AFTER: unlimited
+    function _setUnlimitedOgusdcbWithdrawRateLimit() private {
+        IRateLimits(Base.OSERO_RATE_LIMITS)
+            .setUnlimitedRateLimitData(
+                IERC4626Controller(Base.OSERO_CONTROLLER).erc4626_getWithdrawRateLimitKey(OGUSDCB_VAULT)
+            ); // BEFORE: unset, AFTER: unlimited
     }
 
     function _authorizePasConfigurator() private {

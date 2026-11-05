@@ -24,10 +24,13 @@ All tests, including the Base ones, stay in the Ethereum test file, which extend
 `CommonBaseSpellTests` (`src/test-harness/CrossChainSpellRunner.sol` forks both chains, executes the
 Ethereum spell, relays the message and executes the actions set on Base).
 
-Deployment order: deploy the Base payload on Base, set its address as `PAYLOAD_BASE` in the Ethereum
-spell constructor and as `DEPLOYED_BASE_PAYLOAD` in the tests, then deploy the Ethereum spell and set
-`DEPLOYED_PAYLOAD`. While `PAYLOAD_BASE` is unset the Ethereum spell does not relay anything, and the
-tests simulate the relay from the SubProxy for a freshly deployed Base payload.
+Deployment order: deploy the Base payload on Base, set its address as `PAYLOAD_BASE` in an Ethereum
+spell constructor (`constructor() { PAYLOAD_BASE = 0x...; }`) and as `DEPLOYED_BASE_PAYLOAD` in the
+tests, then deploy the Ethereum spell and set `DEPLOYED_PAYLOAD`. Until then, the tests run the Ethereum
+spell with `PAYLOAD_BASE` set to a freshly deployed Base payload, through the test-only
+`OseroEthereum_YYYYMMDD_WithBasePayload` subclass in the test file. It only adds that constructor, and
+`test_ETHEREUM_payloadWithBasePayloadMatchesSpellBytecode` checks it has the spell's runtime code, so every
+test runs the spell's own relay.
 
 ## Setup
 
