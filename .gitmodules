@@ -13,3 +13,15 @@
 [submodule "lib/pas"]
 	path = lib/pas
 	url = https://github.com/sky-ecosystem/pas
+[submodule "lib/xchain-helpers"]
+	path = lib/xchain-helpers
+	url = https://github.com/sky-ecosystem/xchain-helpers
+[submodule "lib/diamond-pau"]
+	path = lib/diamond-pau
+	url = https://github.com/sky-ecosystem/diamond-pau
+[submodule "lib/pau-administered-agent"]
+	path = lib/pau-administered-agent
+	url = https://github.com/sky-ecosystem/pau-administered-agent
+[submodule "lib/spark-gov-relay"]
+	path = lib/spark-gov-relay
+	url = https://github.com/sparkdotfi/spark-gov-relay
