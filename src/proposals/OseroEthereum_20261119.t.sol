@@ -9,6 +9,8 @@ import {SparkLend} from "spark-address-registry/SparkLend.sol";
 
 import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
 
+import {BeaconConfig} from "diamond-pau/src/libraries/BeaconConfig.sol";
+
 import {IExecutor} from "spark-gov-relay/src/interfaces/IExecutor.sol";
 
 import {CCTPForwarder} from "xchain-helpers/forwarders/CCTPForwarder.sol";
@@ -186,8 +188,9 @@ interface ISafeLike {
 contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
     // Forks at blocks with aligned timestamps (November 5, 2026 15:30 UTC), after the technical-scope
     // readbacks. The Sky PAU Beacon on Base does not register the ERC-4626 facet yet: the November 19, 2026
-    // Sky Core spell registers it (Pre-requirements #1). It is not simulated, so every test that executes the
-    // Base payload fails on `_assertBasePrerequisites` until BASE_FORK_BLOCK is moved past the registration.
+    // Sky Core spell registers it (Pre-requirements #1). Until BASE_FORK_BLOCK is moved past the registration,
+    // `setUp` simulates it (`_registerErc4626FacetOnBaseBeaconAsSkyCore`), so the Base payload executes against the
+    // Diamond PAU on Base as if the ERC-4626 facet were enabled.
     uint256 internal constant MAINNET_FORK_BLOCK = 26_349_341;
     uint256 internal constant BASE_FORK_BLOCK = 53_550_442;
 
@@ -366,6 +369,7 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
 
     function setUp() public {
         _setupDomains(MAINNET_FORK_BLOCK, BASE_FORK_BLOCK);
+        _registerErc4626FacetOnBaseBeaconAsSkyCore();
         _setupPayload(DEPLOYED_PAYLOAD);
         _setupBasePayload(DEPLOYED_BASE_PAYLOAD);
         _setupBaseRelay();
@@ -956,12 +960,10 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         assertEq(unexpected, 0, "unexpected-role-revoke-integration-removal-admin-or-grantor-event");
     }
 
-    /// @dev Pre-requirements #1: until Sky Core registers the ERC-4626 facet on the Sky PAU Beacon on Base,
-    ///      `updateIntegrations` reverts and so does the whole Base payload.
-    /// @dev Pre-requirements #1, end to end against the Base state at BASE_FORK_BLOCK: Sky Core has registered
-    ///      `ERC4626_FACET` on the Sky PAU Beacon on Base with the Ethereum wires, so the relayed Base payload
-    ///      executes. Fails until the November 19, 2026 Sky Core spell registers it on Base and BASE_FORK_BLOCK is
-    ///      moved past the registration.
+    /// @dev Pre-requirements #1, end to end: once Sky Core has registered `ERC4626_FACET` on the Sky PAU Beacon on
+    ///      Base with the Ethereum wires, the relayed Base payload executes and wires the facet from the Beacon.
+    ///      Runs against the registration `setUp` simulates until BASE_FORK_BLOCK is moved past the November 19,
+    ///      2026 Sky Core spell, then against the real one.
     function test_BASE_skyCoreRegisteredErc4626FacetForBasePayload() public {
         _selectBase();
         _assertSkyCoreRegisteredErc4626Facet();
@@ -985,14 +987,12 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         );
     }
 
-    /// @dev Without the registration, the whole Base payload reverts and the actions set stays queued.
+    /// @dev Pre-requirements #1: without the registration, `updateIntegrations` reverts, so the whole Base payload
+    ///      reverts and the actions set stays queued. Removes the registration `setUp` guarantees (simulated or real).
     function test_BASE_payloadRevertsUntilSkyCoreRegistersErc4626Facet() public {
         _selectBase();
-        IBeaconAdminLike beacon = IBeaconAdminLike(BASE_SKY_PAU_BEACON);
-        if (beacon.getConfig(ERC4626_FACET_INTEGRATION_ID).facet != address(0)) {
-            vm.prank(_baseBeaconAdmin());
-            beacon.removeIntegration(ERC4626_FACET_INTEGRATION_ID);
-        }
+        vm.prank(_baseBeaconAdmin());
+        IBeaconAdminLike(BASE_SKY_PAU_BEACON).removeIntegration(ERC4626_FACET_INTEGRATION_ID);
 
         _selectEthereum();
         _executeSpellViaStarGuard(payload);
@@ -1634,8 +1634,19 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         _assertConfigWires(config, BASE_SKY_PAU_ERC4626_FACET, _expectedErc4626Wires(), "base-beacon-erc4626");
     }
 
-    /// @dev The Spark Executor on Base until the November 5, 2026 Spark spell hands Beacon admin to the
-    ///      Governance Relay on Base.
+    /// @dev Base Beacon fixture, NOT part of this spell. Models the November 19, 2026 Sky Core spell
+    ///      (Pre-requirements #1): the Beacon admin registers `ERC4626_FACET` on the Sky PAU Beacon on Base with the
+    ///      deployed Base ERC-4626 facet and the canonical diamond-pau wires (`BeaconConfig`, as registered on
+    ///      Ethereum). The wires come from diamond-pau, not `_expectedErc4626Wires`, so `_assertBasePrerequisites`
+    ///      still checks them independently. A no-op once BASE_FORK_BLOCK is past the real registration, so the
+    ///      tests then run against the Beacon state on Base.
+    function _registerErc4626FacetOnBaseBeaconAsSkyCore() internal onBase {
+        if (IBeaconLike(BASE_SKY_PAU_BEACON).getConfig(ERC4626_FACET_INTEGRATION_ID).facet != address(0)) return;
+
+        vm.prank(_baseBeaconAdmin());
+        BeaconConfig.setERC4626Integration(BASE_SKY_PAU_BEACON, BASE_SKY_PAU_ERC4626_FACET);
+    }
+
     /// @dev Base PAS fixture, NOT part of this spell. Models the November 19, 2026 Sky Core spell
     ///      (Pre-requirements #5): it registers the Osero RateLimits and Controller on Base in BeamState on Base,
     ///      registers and pairs the Osero Operator Multisig on Base as cBEAM, and registers a rate-limit default and
@@ -1692,6 +1703,8 @@ contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
         return abi.encodeCall(IOseroPauControllerLike.removeIntegrations, (ids));
     }
 
+    /// @dev The Spark Executor on Base until the November 5, 2026 Spark spell hands Beacon admin to the
+    ///      Governance Relay on Base.
     function _baseBeaconAdmin() internal view returns (address admin) {
         IBeaconAdminLike beacon = IBeaconAdminLike(BASE_SKY_PAU_BEACON);
         admin = beacon.hasRole(DEFAULT_ADMIN_ROLE, BASE_SKY_GOV_RELAY) ? BASE_SKY_GOV_RELAY : BASE_SPARK_EXECUTOR;
