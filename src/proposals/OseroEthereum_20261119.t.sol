@@ -186,17 +186,18 @@ interface ISafeLike {
 }
 
 contract OseroEthereum_20261119_Test is CommonBaseSpellTests {
-    // Forks at blocks with aligned timestamps (November 5, 2026 15:30 UTC), after the technical-scope
-    // readbacks. The Sky PAU Beacon on Base does not register the ERC-4626 facet yet: the November 19, 2026
-    // Sky Core spell registers it (Pre-requirements #1). Until BASE_FORK_BLOCK is moved past the registration,
-    // `setUp` simulates it (`_registerErc4626FacetOnBaseBeaconAsSkyCore`), so the Base payload executes against the
-    // Diamond PAU on Base as if the ERC-4626 facet were enabled.
-    uint256 internal constant MAINNET_FORK_BLOCK = 26_349_341;
-    uint256 internal constant BASE_FORK_BLOCK = 53_550_442;
+    // Forks at blocks with aligned timestamps (November 12, 2026 13:39:23 UTC): the first Ethereum block after the
+    // spell deployment (Ethereum block 26,399,214; the Base payload is deployed at Base block 56,496,184) and the
+    // first Base block at the same timestamp. The Sky PAU Beacon on Base does not register the ERC-4626 facet yet:
+    // the November 19, 2026 Sky Core spell registers it (Pre-requirements #1). Until BASE_FORK_BLOCK is moved past
+    // the registration, `setUp` simulates it (`_registerErc4626FacetOnBaseBeaconAsSkyCore`), so the Base payload
+    // executes against the Diamond PAU on Base as if the ERC-4626 facet were enabled.
+    uint256 internal constant MAINNET_FORK_BLOCK = 26_399_215;
+    uint256 internal constant BASE_FORK_BLOCK = 56_501_937;
 
-    // The on-chain payloads once deployed; address(0) while the spell is in development.
-    address internal constant DEPLOYED_PAYLOAD = address(0);
-    address internal constant DEPLOYED_BASE_PAYLOAD = address(0);
+    // The on-chain payloads. Deployed by the same account at nonce 0 on both chains, so at the same address.
+    address internal constant DEPLOYED_PAYLOAD = 0xC1989b5c81eA2bC4A6Abda0e73e3E3C48D500d05;
+    address internal constant DEPLOYED_BASE_PAYLOAD = 0xC1989b5c81eA2bC4A6Abda0e73e3E3C48D500d05;
 
     // Circle CCTP V2 (same addresses on Ethereum and Base). Source: https://developers.circle.com/cctp/evm-smart-contracts
     address internal constant CCTP_TOKEN_MESSENGER_V2 = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;

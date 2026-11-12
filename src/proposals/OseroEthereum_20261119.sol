@@ -28,6 +28,12 @@ contract OseroEthereum_20261119 is OseroPayloadEthereum {
     uint256 internal constant CCTP_TO_BASE_MAX = 10_000_000e6;
     uint256 internal constant CCTP_TO_BASE_SLOPE = uint256(50_000_000e6) / 1 days;
 
+    constructor() {
+        // `OseroBase_20261119`, deployed on Base at block 56,496,184 (tx
+        // 0xf65f8a63d245b6a786bf23d5bd2a49a5cad922eca277eea3e7d7499e4b1f366e).
+        PAYLOAD_BASE = 0xC1989b5c81eA2bC4A6Abda0e73e3E3C48D500d05;
+    }
+
     function _execute() internal override {
         // [Ethereum] Proposed action #1: Enable the CCTP integration on the Osero `Controller` on Ethereum Mainnet
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
@@ -52,8 +58,7 @@ contract OseroEthereum_20261119 is OseroPayloadEthereum {
         //   Forum : https://forum.skyeco.com/t/november-19-2026-proposed-changes-to-osero-for-upcoming-spell/28388
         //   Note: sent by `OseroPayloadEthereum.execute` right after these actions, for `PAYLOAD_BASE`
         //         (`OseroBase_20261119`). As in Spark and Grove, the Base payload is deployed on Base first and its
-        //         address is then set as `PAYLOAD_BASE` in a constructor here, before this spell is deployed; while
-        //         `PAYLOAD_BASE` is unset, `execute` sends no message.
+        //         address is set as `PAYLOAD_BASE` in the constructor above, before this spell is deployed.
     }
 
     function _enableCctpIntegration() private {
