@@ -8,4 +8,19 @@ optimizer = false
 bytecode_hash = "none"
 fs_permissions = [{ access = "read", path = "./out" }]
 
+# Pinned explicitly: lib/diamond-pau brings many nested dependencies, and auto-detected remappings
+# vary across forge versions.
+remappings = [
+    "diamond-pau/=lib/diamond-pau/",
+    "forge-std/=lib/forge-std/src/",
+    "osero-address-registry/=lib/osero-address-registry/src/",
+    "pas/=lib/pas/",
+    "pau-administered-agent/=lib/pau-administered-agent/",
+    "sky-pau-registry/=lib/sky-pau-registry/src/",
+    "spark-address-registry/=lib/spark-address-registry/src/",
+    "spark-gov-relay/=lib/spark-gov-relay/",
+    "xchain-helpers/=lib/xchain-helpers/src/",
+    "lib/spark-gov-relay/:openzeppelin-contracts/=lib/spark-gov-relay/lib/openzeppelin-contracts/",
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

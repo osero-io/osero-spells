@@ -1,4 +1,10 @@
 {
+  "lib/diamond-pau": {
+    "tag": {
+      "name": "v1.15.0",
+      "rev": "c5c961a8bd5568c7ca73ba1151b23ab9c7cd9113"
+    }
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.16.1",
@@ -6,15 +12,30 @@
     }
   },
   "lib/osero-address-registry": {
-    "rev": "62d5fe15537d70a3a64aa5bbd853cacf6471aecb"
+    "rev": "572f151968b72bd959ddb0808e328332e28c7e75"
   },
   "lib/pas": {
     "rev": "947e71cd5dbaaf9c5b3840dd1b23e8e99d9a564d"
+  },
+  "lib/pau-administered-agent": {
+    "tag": {
+      "name": "v1.0.1",
+      "rev": "7a6fd3951f4210095945474576a1e9eb5f54c7f5"
+    }
   },
   "lib/sky-pau-registry": {
     "rev": "7b4493a7800b355ef5c9cc43e569c5e8d6fd97f8"
   },
   "lib/spark-address-registry": {
     "rev": "ef21cffbd11ba30c4859213fa37f82b58387b6a6"
+  },
+  "lib/spark-gov-relay": {
+    "tag": {
+      "name": "v1.0.1",
+      "rev": "5c166763464802a9f985fa50560c9e9fb0cf6c2b"
+    }
+  },
+  "lib/xchain-helpers": {
+    "rev": "39d9542173db80143b5135181962f8780fa466f2"
   }
 }
