@@ -141,9 +141,9 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     // `OseroEthereum_20261119`, deployed and plotted for the November 19, 2026 Sky Core spell.
     address internal constant NOVEMBER_19_PAYLOAD = 0xC1989b5c81eA2bC4A6Abda0e73e3E3C48D500d05;
 
-    // TODO: placeholders for the technical scope's `<DESTINATION_ADDRESS>`, `<FACILITY_ADDRESS>` and
-    //       `<NFAT_PRIME_FACET_ADDRESS>`. `test_ETHEREUM_deployedPayloadHasNoPlaceholders` fails once DEPLOYED_PAYLOAD
-    //       is set while any of them is still in use.
+    // TODO: placeholders for the technical scope's `<DESTINATION_ADDRESS>` (also the Halo ALM Proxy below),
+    //       `<FACILITY_ADDRESS>` and `<NFAT_PRIME_FACET_ADDRESS>`. `test_ETHEREUM_deployedPayloadHasNoPlaceholders`
+    //       fails once DEPLOYED_PAYLOAD is set while any of them is still in use.
     address internal constant PLACEHOLDER_USDS_TRANSFER_DESTINATION = 0x1111111111111111111111111111111111111111;
     address internal constant PLACEHOLDER_TEST_NFAT_FACILITY = 0x2222222222222222222222222222222222222222;
     address internal constant PLACEHOLDER_NFAT_PRIME_FACET = 0x3333333333333333333333333333333333333333;
@@ -152,11 +152,12 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     address internal constant USDS_TRANSFER_DESTINATION = PLACEHOLDER_USDS_TRANSFER_DESTINATION;
     address internal constant TEST_NFAT_FACILITY = PLACEHOLDER_TEST_NFAT_FACILITY;
     address internal constant NFAT_PRIME_FACET = PLACEHOLDER_NFAT_PRIME_FACET;
+    // The USDS transfer destination is the Halo ALM Proxy, the Test NFAT Facility's `recipient` and only `bud`.
+    address internal constant TEST_HALO_ALM_PROXY = USDS_TRANSFER_DESTINATION;
 
     // TODO: the Test NFAT Facility configuration (Pre-deployed contracts #2) is `TBD` in the technical scope. Until then
     //       these synthetic values configure the simulated facility.
     address internal constant TEST_NFAT_FACILITY_OWNER = address(0xFAC0);
-    address internal constant TEST_HALO_ALM_PROXY = address(0xFAC1); // `recipient` and the only `bud`
     address internal constant TEST_NFAT_FACILITY_FREEZER = address(0xFAC2);
     address internal constant TEST_NFAT_FACILITY_DEPLOYER = address(0xFAC3);
     // The block the facility is deployed in; its role history is read from there to MAINNET_FORK_BLOCK.
