@@ -221,15 +221,13 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     bytes32 internal constant CCTP_TO_BASE_RATE_LIMIT_KEY =
         keccak256(abi.encode(keccak256("LIMIT_USDC_TO_DOMAIN"), uint32(6)));
 
-    // TODO: placeholders, as in the spell, for the values the Core Council Risk Advisor confirms (Pre-requirements #5).
+    // Rate limits, as in the spell (Proposed actions #2, #4-6). The withdraw and collect keys are unlimited.
     uint256 internal constant USDS_TRANSFER_MAX = 1_000_000e18;
     uint256 internal constant USDS_TRANSFER_SLOPE = uint256(1_000_000e18) / 1 days;
-    uint256 internal constant NFAT_SUBSCRIBE_MAX = 2_000_000e18;
+    uint256 internal constant NFAT_SUBSCRIBE_MAX = 5_000_000e18;
     uint256 internal constant NFAT_SUBSCRIBE_SLOPE = uint256(1_000_000e18) / 1 days;
-    uint256 internal constant NFAT_WITHDRAW_MAX = 3_000_000e18;
-    uint256 internal constant NFAT_WITHDRAW_SLOPE = uint256(3_000_000e18) / 1 days;
-    uint256 internal constant NFAT_COLLECT_MAX = 4_000_000e18;
-    uint256 internal constant NFAT_COLLECT_SLOPE = uint256(4_000_000e18) / 1 days;
+    // The time the subscribe key takes to refill from 0 to its maximum: just over 5 days, as the slope is rounded down.
+    uint256 internal constant NFAT_SUBSCRIBE_REFILL_TIME = NFAT_SUBSCRIBE_MAX / NFAT_SUBSCRIBE_SLOPE + 1;
 
     // ALLOCATOR-PRYSM-A DC-IAM parameters (technical scope, Pre-requirements #2), in rad.
     uint256 internal constant RAD = 1e45;
@@ -436,15 +434,12 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
             "topic-nfat-collect"
         );
 
-        // TODO: placeholder values, as above.
+        // Rate limit values (Proposed actions #2 and #4); Proposed actions #5-6 are unlimited.
         assertEq(USDS_TRANSFER_MAX, 1_000_000_000_000_000_000_000_000, "usds-transfer-max-literal");
         assertEq(USDS_TRANSFER_SLOPE, 11_574_074_074_074_074_074, "usds-transfer-slope-literal");
-        assertEq(NFAT_SUBSCRIBE_MAX, 2_000_000_000_000_000_000_000_000, "nfat-subscribe-max-literal");
+        assertEq(NFAT_SUBSCRIBE_MAX, 5_000_000_000_000_000_000_000_000, "nfat-subscribe-max-literal");
         assertEq(NFAT_SUBSCRIBE_SLOPE, 11_574_074_074_074_074_074, "nfat-subscribe-slope-literal");
-        assertEq(NFAT_WITHDRAW_MAX, 3_000_000_000_000_000_000_000_000, "nfat-withdraw-max-literal");
-        assertEq(NFAT_WITHDRAW_SLOPE, 34_722_222_222_222_222_222, "nfat-withdraw-slope-literal");
-        assertEq(NFAT_COLLECT_MAX, 4_000_000_000_000_000_000_000_000, "nfat-collect-max-literal");
-        assertEq(NFAT_COLLECT_SLOPE, 46_296_296_296_296_296_296, "nfat-collect-slope-literal");
+        assertEq(NFAT_SUBSCRIBE_REFILL_TIME, 432_001, "nfat-subscribe-refill-time");
     }
 
     /// @dev Detects a payload deployed with a placeholder, once DEPLOYED_PAYLOAD is set (it cannot run earlier): the
@@ -591,7 +586,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         _assertRateLimit(
             USDS_TRANSFER_RATE_LIMIT_KEY, USDS_TRANSFER_MAX, USDS_TRANSFER_SLOPE, "usds-transfer-after-retry"
         );
-        _assertRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY, NFAT_COLLECT_MAX, NFAT_COLLECT_SLOPE, "nfat-collect-after-retry");
+        _assertUnlimitedRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY, "nfat-collect-after-retry");
     }
 
     /**********************************************************************************************/
@@ -662,8 +657,8 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
         _assertRateLimit(USDS_TRANSFER_RATE_LIMIT_KEY, USDS_TRANSFER_MAX, USDS_TRANSFER_SLOPE, "usds-transfer");
         _assertRateLimit(NFAT_SUBSCRIBE_RATE_LIMIT_KEY, NFAT_SUBSCRIBE_MAX, NFAT_SUBSCRIBE_SLOPE, "nfat-subscribe");
-        _assertRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY, NFAT_WITHDRAW_MAX, NFAT_WITHDRAW_SLOPE, "nfat-withdraw");
-        _assertRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY, NFAT_COLLECT_MAX, NFAT_COLLECT_SLOPE, "nfat-collect");
+        _assertUnlimitedRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY, "nfat-withdraw");
+        _assertUnlimitedRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY, "nfat-collect");
     }
 
     function test_ETHEREUM_existingRateLimitsPermissionsAndIntegrationsUnchanged() public {
@@ -910,6 +905,8 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         uint256 debtStart = _allocatorDebt();
         _callAsOseroActor(abi.encodeCall(IOseroPauControllerLike.usds_mint, (ROUND_TRIP_USDS_AMOUNT)));
         uint256 proxyUsdsBeforeSubscribe = usds.balanceOf(OSERO_ALM_PROXY);
+        IRateLimitsLike.RateLimitData memory withdrawLimitBefore =
+            rateLimits.getRateLimitData(NFAT_WITHDRAW_RATE_LIMIT_KEY);
 
         vm.expectEmit(TEST_NFAT_FACILITY);
         emit Subscribe(OSERO_ALM_PROXY, ROUND_TRIP_USDS_AMOUNT, "");
@@ -937,10 +934,9 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         );
         assertEq(facility.deposits(OSERO_ALM_PROXY), 0, "facility-deposit-not-withdrawn");
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsBeforeSubscribe, "proxy-usds-not-returned");
-        assertEq(
-            rateLimits.getCurrentRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY),
-            NFAT_WITHDRAW_MAX - ROUND_TRIP_USDS_AMOUNT,
-            "nfat-withdraw-limit-not-decreased"
+        // The withdraw key is unlimited, so a withdrawal leaves it untouched.
+        _assertRateLimitDataUnchanged(
+            withdrawLimitBefore, rateLimits.getRateLimitData(NFAT_WITHDRAW_RATE_LIMIT_KEY), "nfat-withdraw"
         );
         // Withdrawals do not restore subscribe capacity (Cantina 3.2.3 item 6).
         assertEq(
@@ -974,6 +970,8 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(facility.collectable(NFAT_TOKEN_ID), REPAID_USDS_AMOUNT, "repayment-not-collectable");
 
         uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
+        IRateLimitsLike.RateLimitData memory collectLimitBefore =
+            rateLimits.getRateLimitData(NFAT_COLLECT_RATE_LIMIT_KEY);
         vm.expectEmit(TEST_NFAT_FACILITY);
         emit Collect(NFAT_TOKEN_ID, REPAID_USDS_AMOUNT);
         vm.expectEmit(OSERO_CONTROLLER);
@@ -986,10 +984,9 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
         assertEq(facility.collectable(NFAT_TOKEN_ID), 0, "repayment-not-collected");
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + REPAID_USDS_AMOUNT, "proxy-usds-not-collected");
-        assertEq(
-            rateLimits.getCurrentRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY),
-            NFAT_COLLECT_MAX - REPAID_USDS_AMOUNT,
-            "nfat-collect-limit-not-decreased"
+        // The collect key is unlimited, so a collection leaves it untouched.
+        _assertRateLimitDataUnchanged(
+            collectLimitBefore, rateLimits.getRateLimitData(NFAT_COLLECT_RATE_LIMIT_KEY), "nfat-collect"
         );
     }
 
@@ -1015,7 +1012,14 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
             "nfat-subscribe-limit-not-recovering"
         );
 
-        vm.warp(start + PARTIAL_RECOVERY_TIME + 2 days);
+        vm.warp(start + NFAT_SUBSCRIBE_REFILL_TIME - 1);
+        assertLt(
+            rateLimits.getCurrentRateLimit(NFAT_SUBSCRIBE_RATE_LIMIT_KEY),
+            NFAT_SUBSCRIBE_MAX,
+            "nfat-subscribe-limit-refilled-early"
+        );
+
+        vm.warp(start + NFAT_SUBSCRIBE_REFILL_TIME);
         assertEq(
             rateLimits.getCurrentRateLimit(NFAT_SUBSCRIBE_RATE_LIMIT_KEY),
             NFAT_SUBSCRIBE_MAX,
@@ -1044,89 +1048,58 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         );
     }
 
-    /// @dev Proposed actions #5: a withdrawal above the limit reverts and leaves the deposit in place, and the key
-    ///      refills at its slope. The deposit is built in two subscriptions, since each is capped by the subscribe key.
-    function test_ETHEREUM_nfatWithdrawRateLimitRejectsOversizedWithdrawalAndRecoversOverTime() public {
+    /// @dev Proposed actions #5: the withdraw key is unlimited, so a deposit larger than the subscribe key allows at
+    ///      once is withdrawn in one call, and the key is left untouched. The deposit is built in two subscriptions,
+    ///      since each is capped by the subscribe key.
+    function test_ETHEREUM_nfatWithdrawIsUnlimited() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(NFAT_SUBSCRIBE_MAX);
-        // Three days, not two: the slope is rounded down, so two days refill slightly less than NFAT_SUBSCRIBE_MAX.
-        vm.warp(vm.getBlockTimestamp() + 3 days);
+        vm.warp(vm.getBlockTimestamp() + NFAT_SUBSCRIBE_REFILL_TIME);
         _subscribeAsOseroActor(NFAT_SUBSCRIBE_MAX);
         uint256 deposit = facility.deposits(OSERO_ALM_PROXY);
-        assertGt(deposit, NFAT_WITHDRAW_MAX, "deposit-not-above-withdraw-max");
+        assertEq(deposit, 2 * NFAT_SUBSCRIBE_MAX, "deposit-not-built");
         uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
+        IRateLimitsLike.RateLimitData memory withdrawLimitBefore =
+            rateLimits.getRateLimitData(NFAT_WITHDRAW_RATE_LIMIT_KEY);
 
-        _expectCallAsOseroActorRevert(
-            bytes("RateLimits/rate-limit-exceeded"),
-            abi.encodeCall(INFATPrimeControllerLike.nfatPrime_withdraw, (TEST_NFAT_FACILITY, NFAT_WITHDRAW_MAX + 1))
+        _callAsOseroActor(abi.encodeCall(INFATPrimeControllerLike.nfatPrime_withdraw, (TEST_NFAT_FACILITY, deposit)));
+
+        assertEq(facility.deposits(OSERO_ALM_PROXY), 0, "deposit-not-withdrawn");
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + deposit, "proxy-usds-not-returned");
+        _assertRateLimitDataUnchanged(
+            withdrawLimitBefore, rateLimits.getRateLimitData(NFAT_WITHDRAW_RATE_LIMIT_KEY), "nfat-withdraw"
         );
-        assertEq(facility.deposits(OSERO_ALM_PROXY), deposit, "oversized-withdrawal-moved-deposit");
-        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "oversized-withdrawal-moved-usds");
-
-        _callAsOseroActor(
-            abi.encodeCall(INFATPrimeControllerLike.nfatPrime_withdraw, (TEST_NFAT_FACILITY, NFAT_WITHDRAW_MAX))
-        );
-        assertEq(rateLimits.getCurrentRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY), 0, "nfat-withdraw-limit-not-used");
-
-        uint256 start = vm.getBlockTimestamp();
-        vm.warp(start + PARTIAL_RECOVERY_TIME);
         assertEq(
             rateLimits.getCurrentRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY),
-            NFAT_WITHDRAW_SLOPE * PARTIAL_RECOVERY_TIME,
-            "nfat-withdraw-limit-not-recovering"
-        );
-
-        vm.warp(start + PARTIAL_RECOVERY_TIME + 2 days);
-        assertEq(
-            rateLimits.getCurrentRateLimit(NFAT_WITHDRAW_RATE_LIMIT_KEY),
-            NFAT_WITHDRAW_MAX,
-            "nfat-withdraw-limit-not-capped"
+            type(uint256).max,
+            "nfat-withdraw-not-unlimited"
         );
     }
 
-    /// @dev Proposed actions #6: a collection above the limit reverts and leaves the repayment in place, and the key
-    ///      refills at its slope.
-    function test_ETHEREUM_nfatCollectRateLimitRejectsOversizedCollectionAndRecoversOverTime() public {
+    /// @dev Proposed actions #6: the collect key is unlimited, so a repayment larger than the subscribe key's maximum
+    ///      is collected in one call, and the key is left untouched.
+    function test_ETHEREUM_nfatCollectIsUnlimited() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(ROUND_TRIP_USDS_AMOUNT);
         vm.prank(TEST_HALO_ALM_PROXY);
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
-        _repayAsBorrower(NFAT_TOKEN_ID, NFAT_COLLECT_MAX + 1);
+        uint256 repayment = 2 * NFAT_SUBSCRIBE_MAX;
+        _repayAsBorrower(NFAT_TOKEN_ID, repayment);
         uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
-
-        _expectCallAsOseroActorRevert(
-            bytes("RateLimits/rate-limit-exceeded"),
-            abi.encodeCall(
-                INFATPrimeControllerLike.nfatPrime_collect, (TEST_NFAT_FACILITY, NFAT_TOKEN_ID, NFAT_COLLECT_MAX + 1)
-            )
-        );
-        assertEq(facility.collectable(NFAT_TOKEN_ID), NFAT_COLLECT_MAX + 1, "oversized-collection-moved-repayment");
-        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart, "oversized-collection-moved-usds");
+        IRateLimitsLike.RateLimitData memory collectLimitBefore =
+            rateLimits.getRateLimitData(NFAT_COLLECT_RATE_LIMIT_KEY);
 
         _callAsOseroActor(
-            abi.encodeCall(
-                INFATPrimeControllerLike.nfatPrime_collect, (TEST_NFAT_FACILITY, NFAT_TOKEN_ID, NFAT_COLLECT_MAX)
-            )
+            abi.encodeCall(INFATPrimeControllerLike.nfatPrime_collect, (TEST_NFAT_FACILITY, NFAT_TOKEN_ID, repayment))
         );
-        assertEq(rateLimits.getCurrentRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY), 0, "nfat-collect-limit-not-used");
 
-        uint256 start = vm.getBlockTimestamp();
-        vm.warp(start + PARTIAL_RECOVERY_TIME);
-        assertEq(
-            rateLimits.getCurrentRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY),
-            NFAT_COLLECT_SLOPE * PARTIAL_RECOVERY_TIME,
-            "nfat-collect-limit-not-recovering"
-        );
-        _callAsOseroActor(
-            abi.encodeCall(INFATPrimeControllerLike.nfatPrime_collect, (TEST_NFAT_FACILITY, NFAT_TOKEN_ID, 1))
-        );
         assertEq(facility.collectable(NFAT_TOKEN_ID), 0, "repayment-not-collected");
-
-        vm.warp(start + PARTIAL_RECOVERY_TIME + 2 days);
+        assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + repayment, "proxy-usds-not-collected");
+        _assertRateLimitDataUnchanged(
+            collectLimitBefore, rateLimits.getRateLimitData(NFAT_COLLECT_RATE_LIMIT_KEY), "nfat-collect"
+        );
         assertEq(
-            rateLimits.getCurrentRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY),
-            NFAT_COLLECT_MAX,
-            "nfat-collect-limit-not-capped"
+            rateLimits.getCurrentRateLimit(NFAT_COLLECT_RATE_LIMIT_KEY), type(uint256).max, "nfat-collect-not-unlimited"
         );
     }
 
@@ -1311,16 +1284,13 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     }
 
     /// @dev Emergency actions #3: unissued USDS can be withdrawn while the facility is stopped, with
-    ///      `amount = min(deposits, current withdraw limit)`; a deposit above the limit is recovered in parts as the key
-    ///      refills. Subscriptions and collections revert while the facility is stopped.
-    function test_ETHEREUM_withdrawRecoversUnissuedUsdsInPartsWhileFacilityStopped() public {
+    ///      `amount = min(deposits, current withdraw limit)`. The withdraw key is unlimited, so the whole deposit is
+    ///      recovered in one call. Subscriptions and collections revert while the facility is stopped.
+    function test_ETHEREUM_withdrawRecoversUnissuedUsdsWhileFacilityStopped() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(NFAT_SUBSCRIBE_MAX);
-        // Three days, not two: the slope is rounded down, so two days refill slightly less than NFAT_SUBSCRIBE_MAX.
-        vm.warp(vm.getBlockTimestamp() + 3 days);
-        _subscribeAsOseroActor(NFAT_SUBSCRIBE_MAX);
         uint256 deposit = facility.deposits(OSERO_ALM_PROXY);
-        assertGt(deposit, NFAT_WITHDRAW_MAX, "deposit-not-above-withdraw-max");
+        assertEq(deposit, NFAT_SUBSCRIBE_MAX, "deposit-not-built");
         deal(USDS, OSERO_ALM_PROXY, usds.balanceOf(OSERO_ALM_PROXY) + ROUND_TRIP_USDS_AMOUNT);
 
         vm.prank(TEST_NFAT_FACILITY_FREEZER);
@@ -1339,14 +1309,6 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         );
 
         uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
-        _withdrawRecoverableAsOseroActor();
-        assertEq(facility.deposits(OSERO_ALM_PROXY), deposit - NFAT_WITHDRAW_MAX, "first-part-not-recovered");
-        _expectCallAsOseroActorRevert(
-            bytes("RateLimits/rate-limit-exceeded"),
-            abi.encodeCall(INFATPrimeControllerLike.nfatPrime_withdraw, (TEST_NFAT_FACILITY, 1))
-        );
-
-        vm.warp(vm.getBlockTimestamp() + 1 days);
         _withdrawRecoverableAsOseroActor();
         assertEq(facility.deposits(OSERO_ALM_PROXY), 0, "deposit-not-recovered");
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart + deposit, "proxy-usds-not-recovered");
