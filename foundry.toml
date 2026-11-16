@@ -13,6 +13,7 @@ fs_permissions = [{ access = "read", path = "./out" }]
 remappings = [
     "diamond-pau/=lib/diamond-pau/",
     "forge-std/=lib/forge-std/src/",
+    "nfat/=lib/diamond-pau/lib/nfat/",
     "osero-address-registry/=lib/osero-address-registry/src/",
     "pas/=lib/pas/",
     "pau-administered-agent/=lib/pau-administered-agent/",
@@ -21,6 +22,8 @@ remappings = [
     "spark-gov-relay/=lib/spark-gov-relay/",
     "xchain-helpers/=lib/xchain-helpers/src/",
     "lib/spark-gov-relay/:openzeppelin-contracts/=lib/spark-gov-relay/lib/openzeppelin-contracts/",
+    # Test-only: the Test NFAT Facility fixture builds `NFATFacility` from diamond-pau's pinned `nfat`.
+    "lib/diamond-pau/lib/nfat/:openzeppelin-contracts/=lib/diamond-pau/lib/nfat/lib/openzeppelin-contracts/",
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
