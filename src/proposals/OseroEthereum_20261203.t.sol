@@ -7,7 +7,6 @@ import {SparkLend} from "spark-address-registry/SparkLend.sol";
 
 import {Ethereum as SkyPau} from "sky-pau-registry/Ethereum.sol";
 
-import {NFATPrimeFacet} from "diamond-pau/src/facets/nfat-prime/NFATPrimeFacet.sol";
 import {BeaconConfig} from "diamond-pau/src/libraries/BeaconConfig.sol";
 
 import {NFATFacility} from "nfat/src/NFATFacility.sol";
@@ -92,6 +91,12 @@ interface IBeaconAdminLike {
     function removeIntegration(bytes32 id) external;
 }
 
+interface IAccessControlEnumerableLike {
+    function getRoleMember(bytes32 role, uint256 index) external view returns (address);
+    function getRoleMemberCount(bytes32 role) external view returns (uint256);
+    function hasRole(bytes32 role, address account) external view returns (bool);
+}
+
 interface IRateLimitsAdminLike {
     function setRateLimitData(bytes32 key, uint256 maxAmount, uint256 slope) external;
 }
@@ -125,15 +130,17 @@ contract IdentityNetworkMock {
 }
 
 contract OseroEthereum_20261203_Test is CommonPauSpellTests {
-    // Forks at the technical scope readback block (November 16, 2026 14:06:23 UTC). Two things the spell depends on, and
-    // one pre-state the tests assume, are not on-chain at that block. `setUp` simulates each until MAINNET_FORK_BLOCK is
-    // moved past it:
-    // - the NFAT Prime Facet is not deployed, and the December 3, 2026 Sky Core spell registers it on the Sky PAU
-    //   Beacon (Pre-requirements #1, `_registerNfatPrimeFacetAsSkyCore`);
-    // - the Test NFAT Facility is not deployed (Pre-requirements #3, `_deployTestNfatFacilityAsFacilityOwner`);
+    // Forks at the technical scope readback block for the Test Halo side (November 19, 2026 01:07:11 UTC, Pre-requirements
+    // #3-4). The NFAT Prime Facet, the Test NFAT Facility and the Test NFAT Facility Diamond PAU are deployed at that
+    // block. Two things the December 3, 2026 Executive Vote does, and one pre-state the tests assume, are not on-chain
+    // yet. `setUp` simulates each until MAINNET_FORK_BLOCK is moved past it:
+    // - the Sky Core spell registers the NFAT Prime Facet on the Sky PAU Beacon (Pre-requirements #1,
+    //   `_registerNfatPrimeFacetAsSkyCore`);
+    // - the Executive Vote initializes the Test NFAT Facility (Pre-requirements #3, #7,
+    //   `_initializeTestNfatFacilityAsTestHalo`);
     // - the November 19, 2026 Osero spell has not executed (`_executeNovember19SpellIfPending`). This spell does not
     //   depend on it, but the tests expect its `CCTP_FACET` integration and CCTP keys to be in place.
-    uint256 internal constant MAINNET_FORK_BLOCK = 26_428_080;
+    uint256 internal constant MAINNET_FORK_BLOCK = 26_445_734;
 
     // The on-chain payload; address(0) until it is deployed.
     address internal constant DEPLOYED_PAYLOAD = address(0);
@@ -141,29 +148,26 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     // `OseroEthereum_20261119`, deployed and plotted for the November 19, 2026 Sky Core spell.
     address internal constant NOVEMBER_19_PAYLOAD = 0xC1989b5c81eA2bC4A6Abda0e73e3E3C48D500d05;
 
-    // TODO: placeholders for the technical scope's `<DESTINATION_ADDRESS>` (also the Halo ALM Proxy below),
-    //       `<FACILITY_ADDRESS>` and `<NFAT_PRIME_FACET_ADDRESS>`. `test_ETHEREUM_deployedPayloadHasNoPlaceholders`
-    //       fails once DEPLOYED_PAYLOAD is set while any of them is still in use.
-    address internal constant PLACEHOLDER_USDS_TRANSFER_DESTINATION = 0x1111111111111111111111111111111111111111;
-    address internal constant PLACEHOLDER_TEST_NFAT_FACILITY = 0x2222222222222222222222222222222222222222;
-    address internal constant PLACEHOLDER_NFAT_PRIME_FACET = 0x3333333333333333333333333333333333333333;
+    // Addresses from the technical scope (Trusted addresses, Pre-deployed contracts, Pre-requirements #3-4).
+    // The Test NFAT Facility ALM Proxy is the USDS transfer destination, and, once the facility is initialized, its
+    // `recipient` and only `bud`.
+    address internal constant TEST_NFAT_FACILITY_ALM_PROXY = 0xBEE5C2E8436e9834e6890A528E5B294D93b2Eec7;
+    address internal constant TEST_NFAT_FACILITY = 0x02Cb9629B0806b11202C59433eCe4e664C521128;
+    address internal constant NFAT_PRIME_FACET = 0x74d139d6e730F29D62F2Acc6A3b59dF2f2d6D9A8;
+    // The `Controller` of the Test NFAT Facility Diamond PAU; its `proxy()` is the Test NFAT Facility ALM Proxy.
+    address internal constant TEST_NFAT_FACILITY_CONTROLLER = 0x37F628D95ceC5aDA038A1cca734573dbcb79d1cB;
+    // Test Halo SubProxy, the facility's only ward and the ALM Proxy's only `DEFAULT_ADMIN_ROLE` holder.
+    address internal constant TEST_HALO_SUBPROXY = 0xF12Be1673758f8fBC275755401774Ec45C80c0F0;
 
-    // Addresses from the technical scope (Trusted addresses, Pre-deployed contracts, Pre-requirements #4).
-    address internal constant USDS_TRANSFER_DESTINATION = PLACEHOLDER_USDS_TRANSFER_DESTINATION;
-    address internal constant TEST_NFAT_FACILITY = PLACEHOLDER_TEST_NFAT_FACILITY;
-    address internal constant NFAT_PRIME_FACET = PLACEHOLDER_NFAT_PRIME_FACET;
-    // The USDS transfer destination is the Halo ALM Proxy, the Test NFAT Facility's `recipient` and only `bud`.
-    address internal constant TEST_HALO_ALM_PROXY = USDS_TRANSFER_DESTINATION;
-
-    // TODO: the Test NFAT Facility configuration (Pre-deployed contracts #2) is `TBD` in the technical scope. Until then
-    //       these synthetic values configure the simulated facility.
-    address internal constant TEST_NFAT_FACILITY_OWNER = address(0xFAC0);
+    // The Test NFAT Facility as deployed on-chain (Pre-requirements #3): the deployer relied the Test Halo SubProxy and
+    // denied itself. Its role history is read from TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK to MAINNET_FORK_BLOCK.
+    address internal constant TEST_NFAT_FACILITY_DEPLOYER = 0x548DAc55f260AA4631F589Cb2fe72b5E9E4C93Dc;
+    uint256 internal constant TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK = 26_443_860;
+    string internal constant TEST_NFAT_FACILITY_NAME = "Pilot Test Allocation";
+    string internal constant TEST_NFAT_FACILITY_SYMBOL = "$PTA";
+    // TODO: the facility's freezers are set at initialization in the December 3, 2026 Executive Vote and are not yet
+    //       documented (Pre-requirements #3). Until then this synthetic freezer configures the simulated initialization.
     address internal constant TEST_NFAT_FACILITY_FREEZER = address(0xFAC2);
-    address internal constant TEST_NFAT_FACILITY_DEPLOYER = address(0xFAC3);
-    // The block the facility is deployed in; its role history is read from there to MAINNET_FORK_BLOCK.
-    uint256 internal constant TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK = 0;
-    string internal constant TEST_NFAT_FACILITY_NAME = "Test NFAT Facility";
-    string internal constant TEST_NFAT_FACILITY_SYMBOL = "TNFAT";
 
     // Sky PAS on Ethereum. Source: https://chainlog.skyeco.com/ (keys: PAS_CONFIGURATOR, PAS_STATE)
     address internal constant PAS_CONFIGURATOR = 0xb7E61Df6CAb0A51E9A5dab1A7DD3f942dDe5b929;
@@ -197,7 +201,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
     // New keys, from the formulas in the technical scope (Proposed actions #2, #4-6).
     bytes32 internal constant USDS_TRANSFER_RATE_LIMIT_KEY =
-        keccak256(abi.encode(LIMIT_ASSET_TRANSFER, USDS, USDS_TRANSFER_DESTINATION));
+        keccak256(abi.encode(LIMIT_ASSET_TRANSFER, USDS, TEST_NFAT_FACILITY_ALM_PROXY));
     bytes32 internal constant NFAT_SUBSCRIBE_RATE_LIMIT_KEY =
         keccak256(abi.encode(LIMIT_NFAT_PRIME_SUBSCRIBE, USDS, TEST_NFAT_FACILITY));
     bytes32 internal constant NFAT_WITHDRAW_RATE_LIMIT_KEY =
@@ -273,10 +277,8 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
     // Set by `setUp` when a fixture stands in for something the technical scope expects on-chain.
     bool internal november19SpellExecutedByFixture;
-    bool internal nfatPrimeFacetDeployedByFixture;
-    bool internal testNfatFacilityDeployedByFixture;
 
-    // The role history of the facility the fixture deploys; a deployed facility's history is read from the chain.
+    // The role events of the simulated initialization; they follow the facility's on-chain role history.
     FacilityRoleEvent[] internal fixtureFacilityRoleEvents;
 
     event TransferAssetTransfer(address indexed asset, address indexed destination, uint256 amount);
@@ -324,7 +326,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), MAINNET_FORK_BLOCK);
         _executeNovember19SpellIfPending();
         _registerNfatPrimeFacetAsSkyCore();
-        _deployTestNfatFacilityAsFacilityOwner();
+        _initializeTestNfatFacilityAsTestHalo();
         _setupPayload(DEPLOYED_PAYLOAD);
     }
 
@@ -340,9 +342,31 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(keccak256("LIMIT_NFAT_PRIME_WITHDRAW"), LIMIT_NFAT_PRIME_WITHDRAW, "limit-nfat-withdraw-literal");
         assertEq(keccak256("LIMIT_NFAT_PRIME_COLLECT"), LIMIT_NFAT_PRIME_COLLECT, "limit-nfat-collect-literal");
 
+        // The new keys as written in the technical scope (Proposed actions #2, #4-6, Emergency actions #1-2).
+        assertEq(
+            USDS_TRANSFER_RATE_LIMIT_KEY,
+            0xdc1d794c3b887903c7ddbbd9993389bb07143e4becb9aa609297dc205c77505d,
+            "usds-transfer-key-literal"
+        );
+        assertEq(
+            NFAT_SUBSCRIBE_RATE_LIMIT_KEY,
+            0x4f1900e2604bdf2ad80de16402ae5bb5ae9196fe59d4377629cc546cd78d6d98,
+            "nfat-subscribe-key-literal"
+        );
+        assertEq(
+            NFAT_WITHDRAW_RATE_LIMIT_KEY,
+            0x3ec73e26bc851816b1ea627ba14b63765e90b7885b507ed7757fa47bb23774eb,
+            "nfat-withdraw-key-literal"
+        );
+        assertEq(
+            NFAT_COLLECT_RATE_LIMIT_KEY,
+            0x33d797249dda8ed1272964e57b594ab4b6b20d8a66cdfaa248fdbb9d32458c75,
+            "nfat-collect-key-literal"
+        );
+
         ITransferAssetFacetLike transferAssetFacet = ITransferAssetFacetLike(SkyPau.TRANSFER_ASSET_FACET);
         assertEq(
-            transferAssetFacet.getTransferRateLimitKey(USDS, USDS_TRANSFER_DESTINATION),
+            transferAssetFacet.getTransferRateLimitKey(USDS, TEST_NFAT_FACILITY_ALM_PROXY),
             USDS_TRANSFER_RATE_LIMIT_KEY,
             "transfer-asset-facet-key"
         );
@@ -443,23 +467,14 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(NFAT_SUBSCRIBE_REFILL_TIME, 432_001, "nfat-subscribe-refill-time");
     }
 
-    /// @dev Detects a payload deployed with a placeholder, once DEPLOYED_PAYLOAD is set (it cannot run earlier): the
-    ///      tests must use the real destination and facility, the NFAT Prime Facet and the Test NFAT Facility must
-    ///      exist on-chain at the fork block, and the November 19, 2026 spell must have executed. Only Sky Core's
-    ///      registration of the facet may still be simulated, since it happens in the Sky Core spell that plots this
-    ///      payload. The keys the tests derive from the real addresses then fail against a payload built with a
-    ///      placeholder. Before deploying, also check that the placeholder addresses are not in
-    ///      `forge inspect OseroEthereum_20261203 deployedBytecode`.
-    function test_ETHEREUM_deployedPayloadHasNoPlaceholders() public {
+    /// @dev Once DEPLOYED_PAYLOAD is set (it cannot run earlier), the deployed payload is tested on a fork past the
+    ///      November 19, 2026 spell. Only the December 3, 2026 Executive Vote's registration of the facet and
+    ///      initialization of the facility may still be simulated, since they happen in the Sky Core spell that plots
+    ///      this payload.
+    function test_ETHEREUM_deployedPayloadTestedPastNovember19Spell() public {
         vm.skip(deployedPayload == address(0));
 
-        assertNotEq(USDS_TRANSFER_DESTINATION, PLACEHOLDER_USDS_TRANSFER_DESTINATION, "destination-placeholder");
-        assertNotEq(TEST_NFAT_FACILITY, PLACEHOLDER_TEST_NFAT_FACILITY, "facility-placeholder");
-        assertNotEq(NFAT_PRIME_FACET, PLACEHOLDER_NFAT_PRIME_FACET, "nfat-prime-facet-placeholder");
-        assertGt(TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK, 0, "facility-deployment-block-placeholder");
         assertFalse(november19SpellExecutedByFixture, "november-19-spell-not-executed");
-        assertFalse(nfatPrimeFacetDeployedByFixture, "nfat-prime-facet-not-deployed");
-        assertFalse(testNfatFacilityDeployedByFixture, "test-nfat-facility-not-deployed");
     }
 
     /**********************************************************************************************/
@@ -499,20 +514,21 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(facility.name(), TEST_NFAT_FACILITY_NAME, "facility-name");
         assertEq(facility.symbol(), TEST_NFAT_FACILITY_SYMBOL, "facility-symbol");
         assertFalse(facility.stopped(), "facility-stopped");
-        assertEq(facility.recipient(), TEST_HALO_ALM_PROXY, "facility-recipient");
+        assertEq(facility.recipient(), TEST_NFAT_FACILITY_ALM_PROXY, "facility-recipient");
 
-        // The owner is the only ward, the Halo-side ALM Proxy the only operator, and the deployer kept no ward.
+        // The Test Halo SubProxy is the only ward, the Test NFAT Facility ALM Proxy the only operator, and the deployer
+        // kept no ward.
         FacilityRoleEvent[] memory roleEvents = _facilityRoleEvents();
-        _assertRoleSet(_replayRoles(roleEvents, RELY_TOPIC, DENY_TOPIC), TEST_NFAT_FACILITY_OWNER, "facility-wards");
-        _assertRoleSet(_replayRoles(roleEvents, KISS_TOPIC, DISS_TOPIC), TEST_HALO_ALM_PROXY, "facility-buds");
+        _assertRoleSet(_replayRoles(roleEvents, RELY_TOPIC, DENY_TOPIC), TEST_HALO_SUBPROXY, "facility-wards");
+        _assertRoleSet(_replayRoles(roleEvents, KISS_TOPIC, DISS_TOPIC), TEST_NFAT_FACILITY_ALM_PROXY, "facility-buds");
         _assertRoleSet(
             _replayRoles(roleEvents, ADD_FREEZER_TOPIC, REMOVE_FREEZER_TOPIC),
             TEST_NFAT_FACILITY_FREEZER,
             "facility-cops"
         );
-        assertEq(facility.wards(TEST_NFAT_FACILITY_OWNER), 1, "facility-owner-not-ward");
+        assertEq(facility.wards(TEST_HALO_SUBPROXY), 1, "facility-owner-not-ward");
         assertEq(facility.wards(TEST_NFAT_FACILITY_DEPLOYER), 0, "facility-deployer-still-ward");
-        assertEq(facility.buds(TEST_HALO_ALM_PROXY), 1, "facility-operator-not-bud");
+        assertEq(facility.buds(TEST_NFAT_FACILITY_ALM_PROXY), 1, "facility-operator-not-bud");
         assertEq(facility.cops(TEST_NFAT_FACILITY_FREEZER), 1, "facility-freezer-not-cop");
 
         // No identity network, or one the Osero ALM Proxy is a member of.
@@ -532,21 +548,42 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(facility.deposits(OSERO_ALM_PROXY), 0, "osero-almproxy-deposit");
     }
 
+    /// @dev Pre-requirements #4: the USDS transfer destination is the ALM Proxy of the Test NFAT Facility Diamond PAU,
+    ///      and the Test Halo SubProxy is its only `DEFAULT_ADMIN_ROLE` holder.
+    function test_ETHEREUM_testNfatFacilityAlmProxyPreconfiguration() public view {
+        _assertContract(TEST_NFAT_FACILITY_CONTROLLER, "test-nfat-facility-controller");
+        _assertContract(TEST_NFAT_FACILITY_ALM_PROXY, "test-nfat-facility-alm-proxy");
+        assertEq(
+            IOseroPauControllerLike(TEST_NFAT_FACILITY_CONTROLLER).proxy(),
+            TEST_NFAT_FACILITY_ALM_PROXY,
+            "test-nfat-facility-controller-proxy"
+        );
+
+        IAccessControlEnumerableLike almProxy = IAccessControlEnumerableLike(TEST_NFAT_FACILITY_ALM_PROXY);
+        assertEq(almProxy.getRoleMemberCount(DEFAULT_ADMIN_ROLE), 1, "test-nfat-facility-alm-proxy-admin-count");
+        assertEq(
+            almProxy.getRoleMember(DEFAULT_ADMIN_ROLE, 0), TEST_HALO_SUBPROXY, "test-nfat-facility-alm-proxy-admin"
+        );
+        assertFalse(
+            almProxy.hasRole(DEFAULT_ADMIN_ROLE, OSERO_PROXY), "test-nfat-facility-alm-proxy-admin-is-osero-subproxy"
+        );
+    }
+
     /// @dev The role check above replays the facility's role events: an extra ward or operator is counted, and a
     ///      `Deny` removes one, so the check fails for any role set other than the approved one.
     function test_ETHEREUM_facilityRoleReplayCountsExtraAndRemovedRoles() public pure {
         address unapproved = address(0xBAD);
         FacilityRoleEvent[] memory roleEvents = new FacilityRoleEvent[](6);
         roleEvents[0] = FacilityRoleEvent(RELY_TOPIC, TEST_NFAT_FACILITY_DEPLOYER);
-        roleEvents[1] = FacilityRoleEvent(RELY_TOPIC, TEST_NFAT_FACILITY_OWNER);
+        roleEvents[1] = FacilityRoleEvent(RELY_TOPIC, TEST_HALO_SUBPROXY);
         roleEvents[2] = FacilityRoleEvent(DENY_TOPIC, TEST_NFAT_FACILITY_DEPLOYER);
         roleEvents[3] = FacilityRoleEvent(RELY_TOPIC, unapproved);
-        roleEvents[4] = FacilityRoleEvent(KISS_TOPIC, TEST_HALO_ALM_PROXY);
+        roleEvents[4] = FacilityRoleEvent(KISS_TOPIC, TEST_NFAT_FACILITY_ALM_PROXY);
         roleEvents[5] = FacilityRoleEvent(KISS_TOPIC, unapproved);
 
         address[] memory wards = _replayRoles(roleEvents, RELY_TOPIC, DENY_TOPIC);
         assertEq(wards.length, 2, "ward-count");
-        assertEq(wards[0], TEST_NFAT_FACILITY_OWNER, "ward-owner");
+        assertEq(wards[0], TEST_HALO_SUBPROXY, "ward-owner");
         assertEq(wards[1], unapproved, "ward-unapproved");
 
         address[] memory buds = _replayRoles(roleEvents, KISS_TOPIC, DISS_TOPIC);
@@ -632,7 +669,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         assertEq(transferAssetController.transferAsset_VERSION(), "1.0.0", "controller-transfer-asset-version");
         assertEq(nfatPrimeController.nfatPrime_VERSION(), "1.0.0", "controller-nfat-prime-version");
         assertEq(
-            transferAssetController.transferAsset_getTransferRateLimitKey(USDS, USDS_TRANSFER_DESTINATION),
+            transferAssetController.transferAsset_getTransferRateLimitKey(USDS, TEST_NFAT_FACILITY_ALM_PROXY),
             USDS_TRANSFER_RATE_LIMIT_KEY,
             "controller-usds-transfer-key"
         );
@@ -781,20 +818,20 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
         deal(USDS, OSERO_ALM_PROXY, usds.balanceOf(OSERO_ALM_PROXY) + ROUND_TRIP_USDS_AMOUNT);
         uint256 proxyUsdsStart = usds.balanceOf(OSERO_ALM_PROXY);
-        uint256 destinationUsdsStart = usds.balanceOf(USDS_TRANSFER_DESTINATION);
+        uint256 destinationUsdsStart = usds.balanceOf(TEST_NFAT_FACILITY_ALM_PROXY);
 
         vm.expectEmit(OSERO_CONTROLLER);
-        emit TransferAssetTransfer(USDS, USDS_TRANSFER_DESTINATION, ROUND_TRIP_USDS_AMOUNT);
+        emit TransferAssetTransfer(USDS, TEST_NFAT_FACILITY_ALM_PROXY, ROUND_TRIP_USDS_AMOUNT);
         _callAsOseroActor(
             abi.encodeCall(
                 ITransferAssetControllerLike.transferAsset_transfer,
-                (USDS, USDS_TRANSFER_DESTINATION, ROUND_TRIP_USDS_AMOUNT)
+                (USDS, TEST_NFAT_FACILITY_ALM_PROXY, ROUND_TRIP_USDS_AMOUNT)
             )
         );
 
         assertEq(usds.balanceOf(OSERO_ALM_PROXY), proxyUsdsStart - ROUND_TRIP_USDS_AMOUNT, "proxy-usds-not-sent");
         assertEq(
-            usds.balanceOf(USDS_TRANSFER_DESTINATION),
+            usds.balanceOf(TEST_NFAT_FACILITY_ALM_PROXY),
             destinationUsdsStart + ROUND_TRIP_USDS_AMOUNT,
             "destination-usds-not-received"
         );
@@ -815,7 +852,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
             bytes("RateLimits/rate-limit-exceeded"),
             abi.encodeCall(
                 ITransferAssetControllerLike.transferAsset_transfer,
-                (USDS, USDS_TRANSFER_DESTINATION, USDS_TRANSFER_MAX + 1)
+                (USDS, TEST_NFAT_FACILITY_ALM_PROXY, USDS_TRANSFER_MAX + 1)
             )
         );
         _expectCallAsOseroActorRevert(
@@ -828,7 +865,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         );
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/zero-maxAmount"),
-            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDC, USDS_TRANSFER_DESTINATION, 1))
+            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDC, TEST_NFAT_FACILITY_ALM_PROXY, 1))
         );
     }
 
@@ -839,7 +876,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         _callAsOseroActor(
             abi.encodeCall(
                 ITransferAssetControllerLike.transferAsset_transfer,
-                (USDS, USDS_TRANSFER_DESTINATION, USDS_TRANSFER_MAX)
+                (USDS, TEST_NFAT_FACILITY_ALM_PROXY, USDS_TRANSFER_MAX)
             )
         );
         assertEq(rateLimits.getCurrentRateLimit(USDS_TRANSFER_RATE_LIMIT_KEY), 0, "usds-transfer-limit-not-used");
@@ -874,7 +911,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
             OSERO_CONTROLLER,
             abi.encodeCall(
                 ITransferAssetControllerLike.transferAsset_transfer,
-                (USDS, USDS_TRANSFER_DESTINATION, ROUND_TRIP_USDS_AMOUNT)
+                (USDS, TEST_NFAT_FACILITY_ALM_PROXY, ROUND_TRIP_USDS_AMOUNT)
             )
         );
         // forge-lint: disable-next-item(unchecked-call)
@@ -955,14 +992,14 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     function test_ETHEREUM_nfatIssueRepayAndCollectThroughAdministeredAgent() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(ROUND_TRIP_USDS_AMOUNT);
-        uint256 recipientUsdsStart = usds.balanceOf(TEST_HALO_ALM_PROXY);
+        uint256 recipientUsdsStart = usds.balanceOf(TEST_NFAT_FACILITY_ALM_PROXY);
 
-        vm.prank(TEST_HALO_ALM_PROXY);
+        vm.prank(TEST_NFAT_FACILITY_ALM_PROXY);
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
         assertEq(facility.ownerOf(NFAT_TOKEN_ID), OSERO_ALM_PROXY, "nfat-not-issued-to-osero-almproxy");
         assertEq(facility.deposits(OSERO_ALM_PROXY), 0, "deposit-not-drawn");
         assertEq(
-            usds.balanceOf(TEST_HALO_ALM_PROXY),
+            usds.balanceOf(TEST_NFAT_FACILITY_ALM_PROXY),
             recipientUsdsStart + ROUND_TRIP_USDS_AMOUNT,
             "principal-not-sent-to-recipient"
         );
@@ -1082,7 +1119,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     function test_ETHEREUM_nfatCollectIsUnlimited() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(ROUND_TRIP_USDS_AMOUNT);
-        vm.prank(TEST_HALO_ALM_PROXY);
+        vm.prank(TEST_NFAT_FACILITY_ALM_PROXY);
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
         uint256 repayment = 2 * NFAT_SUBSCRIBE_MAX;
         _repayAsBorrower(NFAT_TOKEN_ID, repayment);
@@ -1127,15 +1164,15 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         _subscribeAsOseroActor(ROUND_TRIP_USDS_AMOUNT);
 
         IdentityNetworkMock identityNetwork = new IdentityNetworkMock();
-        vm.prank(TEST_NFAT_FACILITY_OWNER);
+        vm.prank(TEST_HALO_SUBPROXY);
         facility.file("identityNetwork", address(identityNetwork));
 
-        vm.prank(TEST_HALO_ALM_PROXY);
+        vm.prank(TEST_NFAT_FACILITY_ALM_PROXY);
         vm.expectRevert(bytes("NFATFacility/not-member"));
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
 
         identityNetwork.setMember(OSERO_ALM_PROXY, true);
-        vm.prank(TEST_HALO_ALM_PROXY);
+        vm.prank(TEST_NFAT_FACILITY_ALM_PROXY);
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
 
         _repayAsBorrower(NFAT_TOKEN_ID, REPAID_USDS_AMOUNT);
@@ -1159,7 +1196,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     function test_ETHEREUM_operatorMultisigCanStopTransfersAndSubscriptionsThroughConfigurator() public {
         _executeSpellViaStarGuard(payload);
         _subscribeAsOseroActor(2 * ROUND_TRIP_USDS_AMOUNT);
-        vm.prank(TEST_HALO_ALM_PROXY);
+        vm.prank(TEST_NFAT_FACILITY_ALM_PROXY);
         facility.issue(OSERO_ALM_PROXY, NFAT_TOKEN_ID, ROUND_TRIP_USDS_AMOUNT);
         _repayAsBorrower(NFAT_TOKEN_ID, REPAID_USDS_AMOUNT);
         deal(USDS, OSERO_ALM_PROXY, usds.balanceOf(OSERO_ALM_PROXY) + ROUND_TRIP_USDS_AMOUNT);
@@ -1180,7 +1217,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/zero-maxAmount"),
-            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, USDS_TRANSFER_DESTINATION, 1))
+            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, TEST_NFAT_FACILITY_ALM_PROXY, 1))
         );
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/zero-maxAmount"),
@@ -1274,7 +1311,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
 
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/zero-maxAmount"),
-            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, USDS_TRANSFER_DESTINATION, 1))
+            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, TEST_NFAT_FACILITY_ALM_PROXY, 1))
         );
         _expectCallAsOseroActorRevert(
             bytes("RateLimits/zero-maxAmount"),
@@ -1329,7 +1366,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         // forge-lint: disable-next-item(unchecked-call)
         agent.call(
             OSERO_CONTROLLER,
-            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, USDS_TRANSFER_DESTINATION, 1))
+            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, TEST_NFAT_FACILITY_ALM_PROXY, 1))
         );
     }
 
@@ -1351,7 +1388,7 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
             abi.encodeWithSignature(
                 "CallSelectorNotWired(bytes4)", ITransferAssetControllerLike.transferAsset_transfer.selector
             ),
-            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, USDS_TRANSFER_DESTINATION, 1))
+            abi.encodeCall(ITransferAssetControllerLike.transferAsset_transfer, (USDS, TEST_NFAT_FACILITY_ALM_PROXY, 1))
         );
         _expectCallAsOseroActorRevert(
             abi.encodeWithSignature(
@@ -1413,50 +1450,31 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
     }
 
     /// @dev Sky PAU Beacon fixture, NOT part of this spell. Models the December 3, 2026 Sky Core spell (Pre-requirements
-    ///      #1): the Sky Pause Proxy registers `NFAT_PRIME_FACET` with `BeaconConfig.setNFATPrimeIntegration`. Until the
-    ///      NFAT Prime Facet is deployed (Pre-deployed contracts #1), a facet built from diamond-pau (the facet files
-    ///      are unchanged from the audited `v1.14.0` to the pinned `v1.15.0`) is placed at NFAT_PRIME_FACET. The wires
-    ///      come from diamond-pau, not `_expectedNfatPrimeWires`, so the tests still check them independently. A no-op
-    ///      once the fork block is past the real registration.
+    ///      #1): the Sky Pause Proxy registers the deployed NFAT_PRIME_FACET with
+    ///      `BeaconConfig.setNFATPrimeIntegration`. The wires come from diamond-pau, not `_expectedNfatPrimeWires`, so
+    ///      the tests still check them independently. A no-op once the fork block is past the real registration.
     function _registerNfatPrimeFacetAsSkyCore() internal {
         if (IBeaconLike(SKY_PAU_BEACON).getConfig(NFAT_PRIME_FACET_INTEGRATION_ID).facet != address(0)) return;
-
-        if (NFAT_PRIME_FACET.code.length == 0) {
-            // The facet has no constructor and no immutables, so its runtime code can be placed as is.
-            vm.etch(NFAT_PRIME_FACET, address(new NFATPrimeFacet()).code);
-            nfatPrimeFacetDeployedByFixture = true;
-        }
 
         vm.startPrank(MCD_PAUSE_PROXY);
         BeaconConfig.setNFATPrimeIntegration(SKY_PAU_BEACON, NFAT_PRIME_FACET);
         vm.stopPrank();
     }
 
-    /// @dev Test NFAT Facility fixture, NOT part of this spell. Models Pre-requirements #3 until the facility is
-    ///      deployed, following `NFATDeploy.deploy` (with `gemKey` `"USDS"`) and `NFATInit.init` at the audited
-    ///      `fa089fe0`: the deployer creates the facility and hands the ward to the owner (`switchOwner`), then the owner
-    ///      sets the Halo-side ALM Proxy as `recipient` and only operator, and adds a freezer. The scripts are not called:
-    ///      at diamond-pau's pinned `nfat` (`530a5e32`) they hard-code sUSDS as `gem`. Only `NFATFacility` is built from
-    ///      that pin, where `src/NFATFacility.sol` and its OpenZeppelin pin are identical to `fa089fe0`. The role events
-    ///      are recorded for `_facilityRoleEvents`. A no-op once the fork block is past the deployment.
-    function _deployTestNfatFacilityAsFacilityOwner() internal {
-        if (TEST_NFAT_FACILITY.code.length != 0) return;
+    /// @dev Test NFAT Facility fixture, NOT part of this spell. Models the facility's initialization in the December 3,
+    ///      2026 Executive Vote (Pre-requirements #3, #7), following `NFATInit.init` at the audited `fa089fe0`: the Test
+    ///      Halo SubProxy, the facility's ward, sets the Test NFAT Facility ALM Proxy as `recipient` and only operator,
+    ///      and adds the freezer. `identityNetwork` stays `address(0)`. The script is not called: at diamond-pau's
+    ///      pinned `nfat` (`530a5e32`) it requires sUSDS as `gem`. The role events are recorded for
+    ///      `_facilityRoleEvents`. A no-op once the fork block is past the real initialization.
+    function _initializeTestNfatFacilityAsTestHalo() internal {
+        if (facility.recipient() != address(0)) return;
 
         vm.recordLogs();
 
-        vm.startPrank(TEST_NFAT_FACILITY_DEPLOYER);
-        deployCodeTo(
-            "NFATFacility.sol:NFATFacility",
-            abi.encode(USDS, TEST_NFAT_FACILITY_NAME, TEST_NFAT_FACILITY_SYMBOL),
-            TEST_NFAT_FACILITY
-        );
-        facility.rely(TEST_NFAT_FACILITY_OWNER);
-        facility.deny(TEST_NFAT_FACILITY_DEPLOYER);
-        vm.stopPrank();
-
-        vm.startPrank(TEST_NFAT_FACILITY_OWNER);
-        facility.file("recipient", TEST_HALO_ALM_PROXY);
-        facility.kiss(TEST_HALO_ALM_PROXY);
+        vm.startPrank(TEST_HALO_SUBPROXY);
+        facility.file("recipient", TEST_NFAT_FACILITY_ALM_PROXY);
+        facility.kiss(TEST_NFAT_FACILITY_ALM_PROXY);
         facility.addFreezer(TEST_NFAT_FACILITY_FREEZER);
         vm.stopPrank();
 
@@ -1467,8 +1485,6 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
                 FacilityRoleEvent(logs[i].topics[0], address(uint160(uint256(logs[i].topics[1]))))
             );
         }
-
-        testNfatFacilityDeployedByFixture = true;
     }
 
     /// @dev Pre-requirements #1: the Sky PAU Beacon registers the NFAT Prime Facet with exactly the seven wires, and
@@ -1486,20 +1502,21 @@ contract OseroEthereum_20261203_Test is CommonPauSpellTests {
         _assertConfigWires(config, NFAT_PRIME_FACET, _expectedNfatPrimeWires(), "beacon-nfat-prime");
     }
 
-    /// @dev The facility's role events in order: those the fixture recorded, or, for a deployed facility, those on
-    ///      chain from TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK to MAINNET_FORK_BLOCK. The latter needs an RPC that serves
+    /// @dev The facility's role events in order: those on chain from TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK to
+    ///      MAINNET_FORK_BLOCK, then those of the simulated initialization, if any. Needs an RPC that serves
     ///      `eth_getLogs` over that range.
     function _facilityRoleEvents() internal view returns (FacilityRoleEvent[] memory roleEvents) {
-        if (testNfatFacilityDeployedByFixture) return fixtureFacilityRoleEvents;
-
         Vm.EthGetLogs[] memory logs = vm.eth_getLogs(
             TEST_NFAT_FACILITY_DEPLOYMENT_BLOCK, MAINNET_FORK_BLOCK, TEST_NFAT_FACILITY, new bytes32[](0)
         );
-        roleEvents = new FacilityRoleEvent[](logs.length);
+        roleEvents = new FacilityRoleEvent[](logs.length + fixtureFacilityRoleEvents.length);
         uint256 count;
         for (uint256 i = 0; i < logs.length; ++i) {
             if (logs[i].topics.length == 0 || !_isFacilityRoleTopic(logs[i].topics[0])) continue;
             roleEvents[count++] = FacilityRoleEvent(logs[i].topics[0], address(uint160(uint256(logs[i].topics[1]))));
+        }
+        for (uint256 i = 0; i < fixtureFacilityRoleEvents.length; ++i) {
+            roleEvents[count++] = fixtureFacilityRoleEvents[i];
         }
         assembly {
             mstore(roleEvents, count)
