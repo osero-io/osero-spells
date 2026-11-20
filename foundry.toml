@@ -21,6 +21,10 @@ remappings = [
     "spark-gov-relay/=lib/spark-gov-relay/",
     "xchain-helpers/=lib/xchain-helpers/src/",
     "lib/spark-gov-relay/:openzeppelin-contracts/=lib/spark-gov-relay/lib/openzeppelin-contracts/",
+    # Test-only: these two let the Test NFAT Facility fixture build `NFATFacility` from the `nfat` commit diamond-pau
+    # pins (530a5e32; `src/NFATFacility.sol` is identical at the audited fa089fe0).
+    "nfat/=lib/diamond-pau/lib/nfat/",
+    "lib/diamond-pau/lib/nfat/:openzeppelin-contracts/=lib/diamond-pau/lib/nfat/lib/openzeppelin-contracts/",
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
